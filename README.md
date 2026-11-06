@@ -1,3 +1,10 @@
+I forked this because I wanted to be able to save favorite presets and be able to play only favorites.
+I also fixed issues with toast messages and brought back toast messages for shuffle.
+
+
+
+
+
 # ProjectM SDL2 Frontend
 
 This is a reference implementation of an application that makes use of the projectM music visualization library.
