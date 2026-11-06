@@ -349,7 +349,16 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
         case SDLK_y:
             Poco::NotificationCenter::defaultCenter().postNotification(new PlaybackControlNotification(PlaybackControlNotification::Action::ToggleShuffle));
             break;
+        case SDLK_DELETE:
+            _projectMWrapper.RemoveCurrentPresetFromFavorites();
+            break;
 
+        case SDLK_z:
+            if (modifierPressed)
+            {
+                _projectMWrapper.UndoFavoriteChange();
+            }
+            break;
         case SDLK_BACKSPACE:
             Poco::NotificationCenter::defaultCenter().postNotification(new PlaybackControlNotification(PlaybackControlNotification::Action::LastPreset, _keyStates._shiftPressed));
             break;

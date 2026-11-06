@@ -13,6 +13,8 @@
 #include <SDL2/SDL_opengl.h>
 
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 const char* ProjectMWrapper::name() const
 {
@@ -277,6 +279,7 @@ void ProjectMWrapper::SaveCurrentPresetToFavorites()
         }
 
         Poco::File(source).copyTo(target.toString());
+        PushUndo({true, source.getFileName(), ""});
         poco_information_f1(_logger, "Saved favorite: %s", presetFile);
         Poco::NotificationCenter::defaultCenter().postNotification(
             new DisplayToastNotification("Saved to favorites: " + source.getFileName()));
@@ -287,6 +290,168 @@ void ProjectMWrapper::SaveCurrentPresetToFavorites()
         Poco::NotificationCenter::defaultCenter().postNotification(
             new DisplayToastNotification("Could not save favorite"));
     }
+}
+void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
+{
+    auto presetItem = projectm_playlist_item(_playlist, projectm_playlist_get_position(_playlist));
+    if (!presetItem)
+    {
+        return;
+    }
+    std::string presetFile(presetItem);
+    projectm_playlist_free_string(presetItem);
+
+    std::string fileName;
+
+    try
+    {
+        Poco::Path source(presetFile);
+        fileName = source.getFileName();
+
+        Poco::Path target(FavoritesPath());
+        target.setFileName(fileName);
+
+        Poco::File favoriteFile(target);
+        if (!favoriteFile.exists())
+        {
+            Poco::NotificationCenter::defaultCenter().postNotification(
+                new DisplayToastNotification("Not in favorites: " + fileName));
+            return;
+        }
+
+        {
+            // Keep a copy in memory so the removal can be undone.
+            std::ifstream in(favoriteFile.path(), std::ios::binary);
+            std::ostringstream buffer;
+            buffer << in.rdbuf();
+            PushUndo({false, fileName, buffer.str()});
+        }
+
+        favoriteFile.remove();
+        poco_information_f1(_logger, "Removed favorite: %s", fileName);
+    }
+    catch (const Poco::Exception& ex)
+    {
+        poco_error_f1(_logger, "Could not remove favorite: %s", ex.displayText());
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new DisplayToastNotification("Could not remove favorite"));
+        return;
+    }
+
+    std::string message = "Removed from favorites: " + fileName;
+
+    if (_favoritesOnly)
+    {
+        // Reload the favorites list so the removed preset leaves the rotation.
+        projectm_playlist_clear(_playlist);
+        if (FillPlaylist({FavoritesPath()}) == 0)
+        {
+            FillPlaylist(_presetPaths);
+            _favoritesOnly = false;
+            message += " (no favorites left, playing all presets)";
+        }
+
+        if (projectm_playlist_get_shuffle(_playlist))
+        {
+            projectm_playlist_play_next(_playlist, true);
+        }
+        else
+        {
+            projectm_playlist_set_position(_playlist, 0, true);
+        }
+    }
+
+    Poco::NotificationCenter::defaultCenter().postNotification(new DisplayToastNotification(message));
+}
+
+void ProjectMWrapper::PushUndo(FavoriteChange change)
+{
+    _undoStack.push_back(std::move(change));
+    if (_undoStack.size() > 20)
+    {
+        _undoStack.erase(_undoStack.begin());
+    }
+}
+
+void ProjectMWrapper::UndoFavoriteChange()
+{
+    if (_undoStack.empty())
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new DisplayToastNotification("Nothing to undo"));
+        return;
+    }
+
+    auto change = std::move(_undoStack.back());
+    _undoStack.pop_back();
+
+    try
+    {
+        Poco::File(FavoritesPath()).createDirectories();
+
+        Poco::Path target(FavoritesPath());
+        target.setFileName(change.fileName);
+
+        if (change.wasSave)
+        {
+            // Undo a save: delete the copy again.
+            Poco::File savedFile(target);
+            if (savedFile.exists())
+            {
+                savedFile.remove();
+            }
+        }
+        else
+        {
+            // Undo a removal: write the file back.
+            std::ofstream out(target.toString(), std::ios::binary);
+            out << change.contents;
+            out.close();
+
+            if (!out)
+            {
+                throw Poco::IOException("Could not write " + target.toString());
+            }
+        }
+    }
+    catch (const Poco::Exception& ex)
+    {
+        poco_error_f1(_logger, "Could not undo favorites change: %s", ex.displayText());
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new DisplayToastNotification("Could not undo"));
+        return;
+    }
+
+    poco_information_f1(_logger, "Undid favorites change: %s", change.fileName);
+
+    std::string message = (change.wasSave ? "Undid save: " : "Restored favorite: ") + change.fileName;
+
+    // In favorites-only mode, reload the list so it matches the folder again.
+    if (_favoritesOnly)
+    {
+        projectm_playlist_clear(_playlist);
+        if (FillPlaylist({FavoritesPath()}) == 0)
+        {
+            FillPlaylist(_presetPaths);
+            _favoritesOnly = false;
+            message += " (no favorites left, playing all presets)";
+        }
+
+        if (change.wasSave)
+        {
+            // The undone preset may be the one playing, so move on to another.
+            if (projectm_playlist_get_shuffle(_playlist))
+            {
+                projectm_playlist_play_next(_playlist, true);
+            }
+            else
+            {
+                projectm_playlist_set_position(_playlist, 0, true);
+            }
+        }
+    }
+
+    Poco::NotificationCenter::defaultCenter().postNotification(new DisplayToastNotification(message));
 }
 
 void ProjectMWrapper::ToggleFavoritesOnly()

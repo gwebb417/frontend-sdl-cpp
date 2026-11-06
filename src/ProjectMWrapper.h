@@ -86,6 +86,15 @@ public:
     void SaveCurrentPresetToFavorites();
 
     /**
+     * @brief Removes the current preset from the favorites folder.
+     */
+    void RemoveCurrentPresetFromFavorites();
+
+    /**
+     * @brief Undoes the most recent favorites change (a save or a removal).
+     */
+    void UndoFavoriteChange();
+    /**
      * @brief Switches between playing only favorites and playing all presets.
      */
     void ToggleFavoritesOnly();
@@ -96,6 +105,16 @@ private:
 
     std::vector<std::string> _presetPaths; //!< The user's configured preset folders.
     bool _favoritesOnly{false}; //!< True while only the favorites folder is loaded.
+
+    struct FavoriteChange
+    {
+        bool wasSave{false}; //!< True if the preset was saved (undo deletes it), false if it was removed (undo restores it).
+        std::string fileName;
+        std::string contents; //!< File contents, only used for removals.
+    };
+    std::vector<FavoriteChange> _undoStack; //!< Recent favorites changes for undo (most recent last).
+
+    void PushUndo(FavoriteChange change);
     /**
      * @brief projectM callback. Called whenever a preset is switched.
      * @param isHardCut True if the switch was a hard cut.
