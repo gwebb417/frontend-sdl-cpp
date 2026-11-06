@@ -1,15 +1,51 @@
 I forked this because I wanted to be able to save favorite presets.
 I also fixed issues with toast messages and brought back toast messages for shuffle.
+It also includes the preset search window from upstream PR #139.
 
-New Keybinds:
+## Keybinds
 
-S: Save Favorite
+### Favorites (new in this fork)
 
-DEL: Delete Favorite
+| Key    | Action                                                         |
+|--------|----------------------------------------------------------------|
+| S      | Save the current preset to favorites                           |
+| DEL    | Remove the current preset from favorites                       |
+| F      | Switch between favorites only and all presets                  |
+| CTRL-Z | Undo the last save/delete (up to 20 steps)                     |
 
-F: Switch to Favorites
+Favorites are stored as copies of the `.milk` files in `%APPDATA%\projectM\favorites\` by default. Set
+`projectM.favoritesPath` in your config file to use a different folder.
 
-CTRL-Z: Undo Save/Undo Delete
+### Preset search
+
+| Key                  | Action                                            |
+|----------------------|---------------------------------------------------|
+| M                    | Open the preset search window                     |
+| Up/Down/PgUp/PgDown  | Move through the list                             |
+| Home/End             | Jump to the first/last preset                     |
+| ENTER                | Play the selected preset (hold SHIFT for a smooth transition) |
+| ESC                  | Close the search window                           |
+
+The search filters the currently loaded presets, so in favorites mode it only searches your favorites. Every word you
+type must appear in the preset name (not case sensitive).
+
+### Other keys
+
+| Key       | Action                                          |
+|-----------|-------------------------------------------------|
+| ESC       | Toggle the menu                                 |
+| N / P     | Next / previous preset (SHIFT for smooth transition) |
+| R         | Random preset                                   |
+| BACKSPACE | Go back to the last preset played               |
+| SPACE     | Lock/unlock the current preset (shows a toast)  |
+| Y         | Toggle shuffle (shows a toast)                  |
+| A         | Toggle aspect correction (shows a toast)        |
+| UP / DOWN | Increase / decrease beat sensitivity            |
+| CTRL-C    | Copy the current preset's path (shows a toast)  |
+| CTRL-F    | Toggle fullscreen                               |
+| CTRL-M    | Move the window to the next display             |
+| CTRL-I    | Switch to the next audio input device           |
+| CTRL-Q    | Quit                                            |
 
 
 # ProjectM SDL2 Frontend
