@@ -1,8 +1,11 @@
-I forked this because I wanted to be able to save favorite presets and be able to play only favorites.
+I forked this because I wanted to be able to save favorite presets.
 I also fixed issues with toast messages and brought back toast messages for shuffle.
 
-
-
+New Keybinds:
+S: Save Favorite
+DEL: Delete Favorite
+F: Switch to Favorites
+CTRL-Z: Undo Save/Undo Delete
 
 
 # ProjectM SDL2 Frontend
