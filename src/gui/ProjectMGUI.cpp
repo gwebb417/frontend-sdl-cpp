@@ -126,6 +126,9 @@ void ProjectMGUI::Draw()
     // Don't render UI at all if there's no need.
     if (!_toast && !_visible)
     {
+        // Reset the frame timer while idle. Otherwise the first frame of the next
+        // toast counts all the idle time as elapsed and the toast expires instantly.
+        _lastFrameTicks = 0;
         return;
     }
 

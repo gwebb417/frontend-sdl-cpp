@@ -272,6 +272,8 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
         case SDLK_a: {
             bool aspectCorrectionEnabled = !projectm_get_aspect_correction(_projectMHandle);
             projectm_set_aspect_correction(_projectMHandle, aspectCorrectionEnabled);
+            Poco::NotificationCenter::defaultCenter().postNotification(
+                new DisplayToastNotification(aspectCorrectionEnabled ? "Aspect correction: On" : "Aspect correction: Off"));
         }
         break;
 
@@ -279,6 +281,8 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             if (modifierPressed)
             {
                 _projectMWrapper.PresetFileNameToClipboard();
+                Poco::NotificationCenter::defaultCenter().postNotification(
+                    new DisplayToastNotification("Preset path copied to clipboard"));
             }
             break;
 
@@ -293,6 +297,17 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             if (modifierPressed)
             {
                 _sdlRenderingWindow.ToggleFullscreen();
+            }
+            else
+            {
+                _projectMWrapper.ToggleFavoritesOnly();
+            }
+            break;
+
+        case SDLK_s:
+            if (!modifierPressed)
+            {
+                _projectMWrapper.SaveCurrentPresetToFavorites();
             }
             break;
 

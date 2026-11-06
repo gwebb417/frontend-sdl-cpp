@@ -80,8 +80,22 @@ public:
      * Copies the full path of the current preset into the OS clipboard.
      */
     void PresetFileNameToClipboard() const;
+    /**
+     * @brief Copies the current preset file into the favorites folder.
+     */
+    void SaveCurrentPresetToFavorites();
+
+    /**
+     * @brief Switches between playing only favorites and playing all presets.
+     */
+    void ToggleFavoritesOnly();
 
 private:
+    std::string FavoritesPath() const;
+    uint32_t FillPlaylist(const std::vector<std::string>& paths);
+
+    std::vector<std::string> _presetPaths; //!< The user's configured preset folders.
+    bool _favoritesOnly{false}; //!< True while only the favorites folder is loaded.
     /**
      * @brief projectM callback. Called whenever a preset is switched.
      * @param isHardCut True if the switch was a hard cut.

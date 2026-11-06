@@ -22,7 +22,14 @@ bool ToastMessage::Draw(float lastFrameTime)
                                              ImGuiWindowFlags_NoNav |
                                              ImGuiWindowFlags_NoMove;
 
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        // Anchor the toast's top-right corner to the top-right of the window, with some padding.
+    // WorkPos/WorkSize exclude the main menu bar while it's visible, so toasts don't overlap it.
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float padding = ImGui::GetFontSize();
+    ImGui::SetNextWindowPos(
+        ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - padding, viewport->WorkPos.y + padding),
+        ImGuiCond_Always,
+        ImVec2(1.0f, 0.0f));
 
     // Fade out toast in the last second-
     _displayTimeLeft -= lastFrameTime;
