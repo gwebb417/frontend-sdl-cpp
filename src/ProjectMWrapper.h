@@ -1,10 +1,10 @@
 #pragma once
 
-#include "notifications/AudioDataAvailableNotification.h"
-#include "notifications/PlaybackControlNotification.h"
+#include "PresetPlaylist.h"
+#include "notifications/AudioDataAvailable.h"
+#include "notifications/PlaybackControl.h"
 
 #include <projectM-4/projectM.h>
-#include <projectM-4/playlist.h>
 
 #include <Poco/Logger.h>
 #include <Poco/NObserver.h>
@@ -30,10 +30,16 @@ public:
     projectm_handle ProjectM() const;
 
     /**
-     * Returns the playlist handle.
-     * @return The plaslist handle.
+     * Returns the current playlist.
+     * @return The currently active preset playlist.
      */
-    projectm_playlist_handle Playlist() const;
+    const PresetPlaylist& Playlist() const;
+
+    /**
+     * Returns the current playlist.
+     * @return The currently active preset playlist.
+     */
+    PresetPlaylist& Playlist();
 
     /**
      * Renders a single projectM frame.
@@ -50,7 +56,7 @@ public:
      * @brief Updates projectM with the current, actual FPS value.
      * @param fps The current FPS value.
      */
-    void UpdateRealFPS(float fps);
+    void UpdateRealFPS(float fps) const;
 
     /**
      * @brief If splash is disabled, shows the initial preset.
@@ -62,19 +68,19 @@ public:
      * @brief Changes beat sensitivity by the given value.
      * @param value A positive or negative delta value.
      */
-    void ChangeBeatSensitivity(float value);
+    void ChangeBeatSensitivity(float value) const;
 
     /**
      * @brief Returns the libprojectM version this application was built against.
      * @return A string with the libprojectM build version.
      */
-    std::string ProjectMBuildVersion();
+    static std::string ProjectMBuildVersion();
 
     /**
      * @brief Returns the libprojectM version this applications currently runs with.
      * @return A string with the libprojectM runtime library version.
      */
-    std::string ProjectMRuntimeVersion();
+    static std::string ProjectMRuntimeVersion();
 
     /**
      * Copies the full path of the current preset into the OS clipboard.
@@ -100,8 +106,23 @@ public:
     void ToggleFavoritesOnly();
 
 private:
+    void PlaybackControlNotificationHandler(const Poco::AutoPtr<Notification::PlaybackControl>& notification);
+
+    /**
+     * @brief Returns the favorites folder (projectM.favoritesPath or %APPDATA%\projectM\favorites\).
+     */
     std::string FavoritesPath() const;
-    uint32_t FillPlaylist(const std::vector<std::string>& paths);
+
+    /**
+     * @brief Replaces the playlist contents with presets from the given files/folders, sorted by name.
+     * @return The number of presets in the playlist afterwards.
+     */
+    PresetPlaylist::ItemList::size_type FillPlaylist(const std::vector<std::string>& paths);
+
+    /**
+     * @brief Plays a random preset if shuffle is on, otherwise the first one in the playlist.
+     */
+    void PlayFromStart();
 
     std::vector<std::string> _presetPaths; //!< The user's configured preset folders.
     bool _favoritesOnly{false}; //!< True while only the favorites folder is loaded.
@@ -115,17 +136,13 @@ private:
     std::vector<FavoriteChange> _undoStack; //!< Recent favorites changes for undo (most recent last).
 
     void PushUndo(FavoriteChange change);
+
     /**
-     * @brief projectM callback. Called whenever a preset is switched.
-     * @param isHardCut True if the switch was a hard cut.
-     * @param index New preset playlist index.
-     * @param context Callback context, e.g. "this" pointer.
+     * @brief Returns the full path of the currently playing preset, or an empty string if none.
      */
-    static void PresetSwitchedEvent(bool isHardCut, unsigned int index, void* context);
+    std::string CurrentPresetPath() const;
 
-    void PlaybackControlNotificationHandler(const Poco::AutoPtr<PlaybackControlNotification>& notification);
-
-    void AudioDataAvailableNotificationHandler(const Poco::AutoPtr<AudioDataAvailableNotification>& notification);
+    void AudioDataAvailableNotificationHandler(const Poco::AutoPtr<Notification::AudioDataAvailable>& notification);
 
     std::vector<std::string> GetPathListWithDefault(const std::string& baseKey, const std::string& defaultPath);
 
@@ -145,14 +162,14 @@ private:
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _projectMConfigView; //!< View of the "projectM" configuration subkey in the "effective" configuration.
 
     projectm_handle _projectM{nullptr}; //!< Pointer to the projectM instance used by the application.
-    projectm_playlist_handle _playlist{nullptr}; //!< Pointer to the projectM playlist manager instance.
+    std::unique_ptr<PresetPlaylist> _playlist; //!< The currently active playlist.
 
     uint32_t _audioChannels{0}; //!< Number of audio channels of the current capture device.
     std::vector<float> _audioStagingBuffer; //!< Buffer which receives audio data from the capture implementation.
     mutable Poco::Mutex _audioBufferMutex; //!< Mutex protecting access to the audio staging buffer.
 
-    Poco::NObserver<ProjectMWrapper, PlaybackControlNotification> _playbackControlNotificationObserver{*this, &ProjectMWrapper::PlaybackControlNotificationHandler};
-    Poco::NObserver<ProjectMWrapper, AudioDataAvailableNotification> _audioDataAvailableNotificationObserver{*this, &ProjectMWrapper::AudioDataAvailableNotificationHandler};
+    Poco::NObserver<ProjectMWrapper, Notification::PlaybackControl> _playbackControlNotificationObserver{*this, &ProjectMWrapper::PlaybackControlNotificationHandler};
+    Poco::NObserver<ProjectMWrapper, Notification::AudioDataAvailable> _audioDataAvailableNotificationObserver{*this, &ProjectMWrapper::AudioDataAvailableNotificationHandler};
 
     Poco::Logger& _logger{Poco::Logger::get("SDLRenderingWindow")}; //!< The class logger.
 };

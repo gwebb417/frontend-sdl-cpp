@@ -3,7 +3,7 @@
 #include "ProjectMSDLApplication.h"
 #include "SDLRenderingWindow.h"
 
-#include "notifications/DisplayToastNotification.h"
+#include "notifications/DisplayToast.h"
 
 #include <Poco/Delegate.h>
 #include <Poco/File.h>
@@ -82,33 +82,28 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
         }
 
         // Playlist
-        _playlist = projectm_playlist_create(_projectM);
-        if (!_playlist)
-        {
+        _playlist = std::make_unique<PresetPlaylist>();
+        _playlist->ShuffleEnabled(_projectMConfigView->getBool("shuffleEnabled", true));
 
-            poco_error(_logger, "Failed to create the projectM preset playlist manager instance.");
-            throw std::runtime_error("Playlist initialization failed");
-        }
-
-        projectm_playlist_set_shuffle(_playlist, _projectMConfigView->getBool("shuffleEnabled", true));
-
+        _playlist->BeginBatchEdit();
         for (const auto& presetPath : presetPaths)
         {
             Poco::File file(presetPath);
             if (file.exists() && file.isFile())
             {
-                projectm_playlist_add_preset(_playlist, presetPath.c_str(), false);
+                _playlist->AddItem(PresetPlaylist::Item(presetPath), false);
             }
             else
             {
                 // Symbolic links also fall under this. Without complex resolving, we can't
                 // be sure what the link exactly points to, especially if a trailing slash is missing.
-                projectm_playlist_add_path(_playlist, presetPath.c_str(), true, false);
+                _playlist->AddPath(presetPath, true, false);
             }
         }
-        projectm_playlist_sort(_playlist, 0, projectm_playlist_size(_playlist), SORT_PREDICATE_FILENAME_ONLY, SORT_ORDER_ASCENDING);
+        _playlist->Sort(PresetPlaylist::SortPredicate::PresetName, PresetPlaylist::SortOrder::Ascending);
+        _playlist->EndBatchEdit();
 
-        projectm_playlist_set_preset_switched_event_callback(_playlist, &ProjectMWrapper::PresetSwitchedEvent, static_cast<void*>(this));
+        _playlist->Connect(_projectM);
     }
 
     Poco::NotificationCenter::defaultCenter().addObserver(_playbackControlNotificationObserver);
@@ -121,6 +116,8 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
 
 void ProjectMWrapper::uninitialize()
 {
+    _playlist.reset();
+
     _userConfig->propertyRemoved -= Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyRemoved);
     _userConfig->propertyChanged -= Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyChanged);
     Poco::NotificationCenter::defaultCenter().removeObserver(_playbackControlNotificationObserver);
@@ -131,12 +128,6 @@ void ProjectMWrapper::uninitialize()
         projectm_destroy(_projectM);
         _projectM = nullptr;
     }
-
-    if (_playlist)
-    {
-        projectm_playlist_destroy(_playlist);
-        _playlist = nullptr;
-    }
 }
 
 projectm_handle ProjectMWrapper::ProjectM() const
@@ -144,9 +135,24 @@ projectm_handle ProjectMWrapper::ProjectM() const
     return _projectM;
 }
 
-projectm_playlist_handle ProjectMWrapper::Playlist() const
+const PresetPlaylist& ProjectMWrapper::Playlist() const
 {
-    return _playlist;
+    if (_playlist)
+    {
+        return *_playlist;
+    }
+
+    throw std::runtime_error("Playlist not available (ProjectMWrapper subsystem not yet initialized?)");
+}
+
+PresetPlaylist& ProjectMWrapper::Playlist()
+{
+    if (_playlist)
+    {
+        return *_playlist;
+    }
+
+    throw std::runtime_error("Playlist not available (ProjectMWrapper subsystem not yet initialized?)");
 }
 
 int ProjectMWrapper::TargetFPS()
@@ -154,7 +160,7 @@ int ProjectMWrapper::TargetFPS()
     return _projectMConfigView->getInt("fps", 60);
 }
 
-void ProjectMWrapper::UpdateRealFPS(float fps)
+void ProjectMWrapper::UpdateRealFPS(float fps) const
 {
     projectm_set_fps(_projectM, static_cast<uint32_t>(std::round(fps)));
 }
@@ -178,6 +184,7 @@ void ProjectMWrapper::RenderFrame()
         Poco::ScopedLock lock(_audioBufferMutex);
         if (!_audioStagingBuffer.empty())
         {
+            poco_assert(_audioStagingBuffer.size() % _audioChannels == 0);
             projectm_pcm_add_float(_projectM, _audioStagingBuffer.data(), _audioStagingBuffer.size() / _audioChannels, static_cast<projectm_channels>(_audioChannels));
             _audioStagingBuffer.clear();
         }
@@ -188,24 +195,26 @@ void ProjectMWrapper::RenderFrame()
 
 void ProjectMWrapper::DisplayInitialPreset()
 {
+    poco_assert(_playlist);
+
     if (!_projectMConfigView->getBool("enableSplash", true))
     {
         if (_projectMConfigView->getBool("shuffleEnabled", true))
         {
-            projectm_playlist_play_next(_playlist, true);
+            _playlist->Random(true);
         }
         else
         {
-            projectm_playlist_set_position(_playlist, 0, true);
+            _playlist->CurrentIndex(0, true);
         }
     }
 }
 
-void ProjectMWrapper::ChangeBeatSensitivity(float value)
+void ProjectMWrapper::ChangeBeatSensitivity(float value) const
 {
     projectm_set_beat_sensitivity(_projectM, projectm_get_beat_sensitivity(_projectM) + value);
     Poco::NotificationCenter::defaultCenter().postNotification(
-        new DisplayToastNotification(Poco::format("Beat Sensitivity: %.2hf", projectm_get_beat_sensitivity(_projectM))));
+        new Notification::DisplayToast(Poco::format("Beat Sensitivity: %.2hf", projectm_get_beat_sensitivity(_projectM))));
 }
 
 std::string ProjectMWrapper::ProjectMBuildVersion()
@@ -224,9 +233,10 @@ std::string ProjectMWrapper::ProjectMRuntimeVersion()
 
 void ProjectMWrapper::PresetFileNameToClipboard() const
 {
-    auto presetName = projectm_playlist_item(_playlist, projectm_playlist_get_position(_playlist));
-    SDL_SetClipboardText(presetName);
-    projectm_playlist_free_string(presetName);
+    if (_playlist && !_playlist->Empty())
+    {
+        SDL_SetClipboardText(_playlist->CurrentItem().Path().c_str());
+    }
 }
 
 std::string ProjectMWrapper::FavoritesPath() const
@@ -235,33 +245,69 @@ std::string ProjectMWrapper::FavoritesPath() const
     return _projectMConfigView->getString("favoritesPath", defaultPath);
 }
 
-uint32_t ProjectMWrapper::FillPlaylist(const std::vector<std::string>& paths)
+PresetPlaylist::ItemList::size_type ProjectMWrapper::FillPlaylist(const std::vector<std::string>& paths)
 {
+    _playlist->BeginBatchEdit();
+    _playlist->Clear();
     for (const auto& path : paths)
     {
         Poco::File file(path);
         if (file.exists() && file.isFile())
         {
-            projectm_playlist_add_preset(_playlist, path.c_str(), false);
+            _playlist->AddItem(PresetPlaylist::Item(path), false);
         }
         else
         {
-            projectm_playlist_add_path(_playlist, path.c_str(), true, false);
+            _playlist->AddPath(path, true, false);
         }
     }
-    projectm_playlist_sort(_playlist, 0, projectm_playlist_size(_playlist), SORT_PREDICATE_FILENAME_ONLY, SORT_ORDER_ASCENDING);
-    return projectm_playlist_size(_playlist);
+    _playlist->Sort(PresetPlaylist::SortPredicate::PresetName, PresetPlaylist::SortOrder::Ascending);
+    _playlist->EndBatchEdit();
+
+    return _playlist->Size();
+}
+
+void ProjectMWrapper::PlayFromStart()
+{
+    if (_playlist->Empty())
+    {
+        return;
+    }
+
+    if (_playlist->ShuffleEnabled())
+    {
+        _playlist->Random(true);
+    }
+    else
+    {
+        _playlist->CurrentIndex(0, true);
+    }
+}
+
+std::string ProjectMWrapper::CurrentPresetPath() const
+{
+    if (!_playlist || _playlist->Empty())
+    {
+        return {};
+    }
+
+    try
+    {
+        return _playlist->CurrentItem().Path();
+    }
+    catch (const std::exception&)
+    {
+        return {};
+    }
 }
 
 void ProjectMWrapper::SaveCurrentPresetToFavorites()
 {
-    auto presetItem = projectm_playlist_item(_playlist, projectm_playlist_get_position(_playlist));
-    if (!presetItem)
+    auto presetFile = CurrentPresetPath();
+    if (presetFile.empty())
     {
         return;
     }
-    std::string presetFile(presetItem);
-    projectm_playlist_free_string(presetItem);
 
     try
     {
@@ -274,7 +320,7 @@ void ProjectMWrapper::SaveCurrentPresetToFavorites()
         if (Poco::File(target).exists())
         {
             Poco::NotificationCenter::defaultCenter().postNotification(
-                new DisplayToastNotification("Already in favorites: " + source.getFileName()));
+                new Notification::DisplayToast("Already in favorites: " + source.getFileName()));
             return;
         }
 
@@ -282,24 +328,23 @@ void ProjectMWrapper::SaveCurrentPresetToFavorites()
         PushUndo({true, source.getFileName(), ""});
         poco_information_f1(_logger, "Saved favorite: %s", presetFile);
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Saved to favorites: " + source.getFileName()));
+            new Notification::DisplayToast("Saved to favorites: " + source.getFileName()));
     }
     catch (const Poco::Exception& ex)
     {
         poco_error_f1(_logger, "Could not save favorite: %s", ex.displayText());
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Could not save favorite"));
+            new Notification::DisplayToast("Could not save favorite"));
     }
 }
+
 void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
 {
-    auto presetItem = projectm_playlist_item(_playlist, projectm_playlist_get_position(_playlist));
-    if (!presetItem)
+    auto presetFile = CurrentPresetPath();
+    if (presetFile.empty())
     {
         return;
     }
-    std::string presetFile(presetItem);
-    projectm_playlist_free_string(presetItem);
 
     std::string fileName;
 
@@ -315,7 +360,7 @@ void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
         if (!favoriteFile.exists())
         {
             Poco::NotificationCenter::defaultCenter().postNotification(
-                new DisplayToastNotification("Not in favorites: " + fileName));
+                new Notification::DisplayToast("Not in favorites: " + fileName));
             return;
         }
 
@@ -334,7 +379,7 @@ void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
     {
         poco_error_f1(_logger, "Could not remove favorite: %s", ex.displayText());
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Could not remove favorite"));
+            new Notification::DisplayToast("Could not remove favorite"));
         return;
     }
 
@@ -343,7 +388,6 @@ void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
     if (_favoritesOnly)
     {
         // Reload the favorites list so the removed preset leaves the rotation.
-        projectm_playlist_clear(_playlist);
         if (FillPlaylist({FavoritesPath()}) == 0)
         {
             FillPlaylist(_presetPaths);
@@ -351,17 +395,10 @@ void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
             message += " (no favorites left, playing all presets)";
         }
 
-        if (projectm_playlist_get_shuffle(_playlist))
-        {
-            projectm_playlist_play_next(_playlist, true);
-        }
-        else
-        {
-            projectm_playlist_set_position(_playlist, 0, true);
-        }
+        PlayFromStart();
     }
 
-    Poco::NotificationCenter::defaultCenter().postNotification(new DisplayToastNotification(message));
+    Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(message));
 }
 
 void ProjectMWrapper::PushUndo(FavoriteChange change)
@@ -378,7 +415,7 @@ void ProjectMWrapper::UndoFavoriteChange()
     if (_undoStack.empty())
     {
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Nothing to undo"));
+            new Notification::DisplayToast("Nothing to undo"));
         return;
     }
 
@@ -418,7 +455,7 @@ void ProjectMWrapper::UndoFavoriteChange()
     {
         poco_error_f1(_logger, "Could not undo favorites change: %s", ex.displayText());
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Could not undo"));
+            new Notification::DisplayToast("Could not undo"));
         return;
     }
 
@@ -429,7 +466,6 @@ void ProjectMWrapper::UndoFavoriteChange()
     // In favorites-only mode, reload the list so it matches the folder again.
     if (_favoritesOnly)
     {
-        projectm_playlist_clear(_playlist);
         if (FillPlaylist({FavoritesPath()}) == 0)
         {
             FillPlaylist(_presetPaths);
@@ -440,115 +476,88 @@ void ProjectMWrapper::UndoFavoriteChange()
         if (change.wasSave)
         {
             // The undone preset may be the one playing, so move on to another.
-            if (projectm_playlist_get_shuffle(_playlist))
-            {
-                projectm_playlist_play_next(_playlist, true);
-            }
-            else
-            {
-                projectm_playlist_set_position(_playlist, 0, true);
-            }
+            PlayFromStart();
         }
     }
 
-    Poco::NotificationCenter::defaultCenter().postNotification(new DisplayToastNotification(message));
+    Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(message));
 }
 
 void ProjectMWrapper::ToggleFavoritesOnly()
 {
-    projectm_playlist_clear(_playlist);
-
     if (!_favoritesOnly)
     {
         auto count = FillPlaylist({FavoritesPath()});
         if (count == 0)
         {
-            // Nothing saved yet: restore the full playlist and keep the current preset.
-            projectm_playlist_clear(_playlist);
+            // Nothing saved yet: restore the full playlist.
             FillPlaylist(_presetPaths);
             Poco::NotificationCenter::defaultCenter().postNotification(
-                new DisplayToastNotification("No favorites saved yet (press S to save one)"));
+                new Notification::DisplayToast("No favorites saved yet (press S to save one)"));
             return;
         }
         _favoritesOnly = true;
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Favorites only (" + std::to_string(count) + " presets)"));
+            new Notification::DisplayToast("Favorites only (" + std::to_string(count) + " presets)"));
     }
     else
     {
         FillPlaylist(_presetPaths);
         _favoritesOnly = false;
         Poco::NotificationCenter::defaultCenter().postNotification(
-            new DisplayToastNotification("Playing all presets"));
+            new Notification::DisplayToast("Playing all presets"));
     }
 
     // Start from the newly loaded list.
-    if (projectm_playlist_get_shuffle(_playlist))
-    {
-        projectm_playlist_play_next(_playlist, true);
-    }
-    else
-    {
-        projectm_playlist_set_position(_playlist, 0, true);
-    }
+    PlayFromStart();
 }
 
-void ProjectMWrapper::PresetSwitchedEvent(bool isHardCut, unsigned int index, void* context)
+void ProjectMWrapper::PlaybackControlNotificationHandler(const Poco::AutoPtr<Notification::PlaybackControl>& notification)
 {
-    auto that = reinterpret_cast<ProjectMWrapper*>(context);
-    auto presetName = projectm_playlist_item(that->_playlist, index);
-    poco_information_f1(that->_logger, "Displaying preset: %s", std::string(presetName));
-    projectm_playlist_free_string(presetName);
+    if (!_playlist)
+    {
+        return;
+    }
 
-    Poco::NotificationCenter::defaultCenter().postNotification(new UpdateWindowTitleNotification);
-}
-
-void ProjectMWrapper::PlaybackControlNotificationHandler(const Poco::AutoPtr<PlaybackControlNotification>& notification)
-{
-    bool shuffleEnabled = projectm_playlist_get_shuffle(_playlist);
+    bool shuffleEnabled = _playlist->ShuffleEnabled();
+    bool hardCut = !notification->SmoothTransition();
 
     switch (notification->ControlAction())
     {
-        case PlaybackControlNotification::Action::NextPreset:
-            projectm_playlist_set_shuffle(_playlist, false);
-            projectm_playlist_play_next(_playlist, !notification->SmoothTransition());
-            projectm_playlist_set_shuffle(_playlist, shuffleEnabled);
+        case Notification::PlaybackControl::Action::NextPreset:
+            _playlist->Next(hardCut);
             break;
 
-        case PlaybackControlNotification::Action::PreviousPreset:
-            projectm_playlist_set_shuffle(_playlist, false);
-            projectm_playlist_play_previous(_playlist, !notification->SmoothTransition());
-            projectm_playlist_set_shuffle(_playlist, shuffleEnabled);
+        case Notification::PlaybackControl::Action::PreviousPreset:
+            _playlist->Previous(hardCut);
             break;
 
-        case PlaybackControlNotification::Action::LastPreset:
-            projectm_playlist_play_last(_playlist, !notification->SmoothTransition());
+        case Notification::PlaybackControl::Action::LastPreset:
+            _playlist->LastInHistory(hardCut);
             break;
 
-        case PlaybackControlNotification::Action::RandomPreset: {
-            projectm_playlist_set_shuffle(_playlist, true);
-            projectm_playlist_play_next(_playlist, !notification->SmoothTransition());
-            projectm_playlist_set_shuffle(_playlist, shuffleEnabled);
+        case Notification::PlaybackControl::Action::RandomPreset: {
+            _playlist->Random(hardCut);
             break;
         }
 
-        case PlaybackControlNotification::Action::ToggleShuffle:
+        case Notification::PlaybackControl::Action::ToggleShuffle:
             _userConfig->setBool("projectM.shuffleEnabled", !shuffleEnabled);
             Poco::NotificationCenter::defaultCenter().postNotification(
-                new DisplayToastNotification(shuffleEnabled ? "Shuffle: Off" : "Shuffle: On"));
+                new Notification::DisplayToast(shuffleEnabled ? "Shuffle: Off" : "Shuffle: On"));
             break;
 
-        case PlaybackControlNotification::Action::TogglePresetLocked: {
+        case Notification::PlaybackControl::Action::TogglePresetLocked: {
             bool presetLocked = !projectm_get_preset_locked(_projectM);
             _userConfig->setBool("projectM.presetLocked", presetLocked);
             Poco::NotificationCenter::defaultCenter().postNotification(
-                new DisplayToastNotification(presetLocked ? "Preset locked" : "Preset unlocked"));
+                new Notification::DisplayToast(presetLocked ? "Preset locked" : "Preset unlocked"));
             break;
         }
     }
 }
 
-void ProjectMWrapper::AudioDataAvailableNotificationHandler(const Poco::AutoPtr<AudioDataAvailableNotification>& notification)
+void ProjectMWrapper::AudioDataAvailableNotificationHandler(const Poco::AutoPtr<Notification::AudioDataAvailable>& notification)
 {
     Poco::ScopedLock lock(_audioBufferMutex);
 
@@ -600,12 +609,12 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
     if (key == "projectM.presetLocked")
     {
         projectm_set_preset_locked(_projectM, _projectMConfigView->getBool("presetLocked", false));
-        Poco::NotificationCenter::defaultCenter().postNotification(new UpdateWindowTitleNotification);
+        Poco::NotificationCenter::defaultCenter().postNotification(new Notification::UpdateWindowTitle);
     }
 
     if (key == "projectM.shuffleEnabled")
     {
-        projectm_playlist_set_shuffle(_playlist, _projectMConfigView->getBool("shuffleEnabled", true));
+        _playlist->ShuffleEnabled(_projectMConfigView->getBool("shuffleEnabled", true));
     }
 
     if (key == "projectM.aspectCorrectionEnabled")
@@ -625,7 +634,7 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
 
     if (key == "projectM.hardCutsEnabled")
     {
-        projectm_set_aspect_correction(_projectM, _projectMConfigView->getBool("hardCutsEnabled", false));
+        projectm_set_hard_cut_enabled(_projectM, _projectMConfigView->getBool("hardCutsEnabled", false));
     }
 
     if (key == "projectM.hardCutDuration")

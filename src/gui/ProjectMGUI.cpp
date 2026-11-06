@@ -123,13 +123,32 @@ bool ProjectMGUI::Visible() const
 
 void ProjectMGUI::Draw()
 {
+    // Reset key/mouse capture flags in case ImGui enabled them in the previous frame
+    auto& io = ImGui::GetIO();
+    io.WantCaptureKeyboard = false;
+    io.WantCaptureMouse = false;
+
     // Don't render UI at all if there's no need.
-    if (!_toast && !_visible)
+    if (!_toast && !_visible && !_presetChooser)
     {
         // Reset the frame timer while idle. Otherwise the first frame of the next
         // toast counts all the idle time as elapsed and the toast expires instantly.
         _lastFrameTicks = 0;
+        _wasIdle = true;
         return;
+    }
+
+    if (_wasIdle)
+    {
+        // While idle, ImGui::NewFrame() isn't called, so every key/text event forwarded via
+        // ProcessInput() piles up in ImGui's input queue. Without clearing, the first frames after
+        // waking up replay that backlog: old letters land in the preset search field and an old
+        // ESC/Enter press closes it again immediately. Also release any keys ImGui still thinks
+        // are held, since their key-up events may be among the discarded ones.
+        io.ClearEventsQueue();
+        io.ClearInputKeys();
+        io.ClearInputMouse();
+        _wasIdle = false;
     }
 
     if (_userScalingFactor != GetClampedUserScalingFactor())
@@ -158,6 +177,14 @@ void ProjectMGUI::Draw()
         if (!_toast->Draw(secondsSinceLastFrame))
         {
             _toast.reset();
+        }
+    }
+
+    if (_presetChooser)
+    {
+        if (!_presetChooser->Draw())
+        {
+            _presetChooser.reset();
         }
     }
 
@@ -215,6 +242,28 @@ void ProjectMGUI::ShowHelpWindow()
     _helpWindow.Show();
 }
 
+void ProjectMGUI::ShowPresetChooser()
+{
+    if (_presetChooser)
+    {
+        return;
+    }
+
+    // CurrentIndex() throws on an empty playlist, so there's nothing to search in that case.
+    if (_projectMWrapper->Playlist().Empty())
+    {
+        _toast = std::make_unique<ToastMessage>("No presets loaded", 3.0f);
+        return;
+    }
+
+    _presetChooser = std::make_unique<PresetChooser>(_projectMWrapper->Playlist().Items(), _projectMWrapper->Playlist().CurrentIndex());
+}
+
+void ProjectMGUI::ClosePresetChooser()
+{
+    _presetChooser.reset();
+}
+
 float ProjectMGUI::GetScalingFactor()
 {
     int windowWidth;
@@ -237,7 +286,7 @@ float ProjectMGUI::GetClampedUserScalingFactor()
     return std::min(3.0f, std::max(0.1f, static_cast<float>(Poco::Util::Application::instance().config().getDouble("window.uiScale", 1.0))));
 }
 
-void ProjectMGUI::DisplayToastNotificationHandler(const Poco::AutoPtr<DisplayToastNotification>& notification)
+void ProjectMGUI::DisplayToastNotificationHandler(const Poco::AutoPtr<Notification::DisplayToast>& notification)
 {
     if (Poco::Util::Application::instance().config().getBool("projectM.displayToasts", true))
     {
