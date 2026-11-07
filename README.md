@@ -1,6 +1,18 @@
 I forked this because I wanted to be able to save favorite presets. Along the way I fixed a number of issues with
 toasts, settings and the UI. It also includes the preset search window from upstream PR #139.
 
+This is an unofficial fork, not an official projectM release.
+
+## Download (Windows)
+
+Get `projectMSDL-portable-windows-x64.zip` from the [latest release](https://github.com/gwebb417/frontend-sdl-cpp/releases/latest),
+unzip it anywhere and run `projectMSDL.exe`. It's a single exe with no DLLs or installation needed, and it already
+includes the presets and textures (see [Presets and textures](#presets-and-textures)). It runs in
+[portable mode](#new-features), so settings and favorites are kept in the unzipped folder.
+
+If Windows shows "Windows protected your PC", click **More info** and then **Run anyway**. This appears because the exe
+isn't code-signed.
+
 ## What's different in this fork
 
 ### New features
@@ -55,8 +67,9 @@ All keys are also listed in the app under **Help > Quick Help**.
 | F      | Switch between favorites only and all presets                  |
 | CTRL-Z | Undo the last save/delete (up to 20 steps)                     |
 
-Favorites are stored as copies of the `.milk` files in `%APPDATA%\projectM\favorites\` by default. Set
-`projectM.favoritesPath` in your config file to use a different folder.
+Favorites are stored as copies of the `.milk` files in `%APPDATA%\projectM\favorites\` by default, or in
+`userdata\favorites\` next to the exe in portable mode. Set `projectM.favoritesPath` in your config file to use a
+different folder.
 
 ### Preset search
 
@@ -114,29 +127,14 @@ cmake --build cmake-build-static --config Release --parallel
 cmake --install cmake-build-static --config Release
 ```
 
-The install folder then contains `projectMSDL.exe` and the optional, commented default `projectMSDL.properties`. For
-a portable setup, add `presets\`, `textures\` and `portable.txt` next to the exe, see below.
-
-## Presets and textures
-
-The presets and textures are not included and are downloaded separately from the official projectM repositories:
-
-- **Presets:** [presets-cream-of-the-crop](https://github.com/projectM-visualizer/presets-cream-of-the-crop), about
-  9,800 hand-picked Milkdrop presets. This is the default preset pack of projectM.
-- **Textures:** [presets-milkdrop-texture-pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack),
-  the images many presets use. Without them, those presets may look wrong.
-
-On each page, click **Code > Download ZIP** and unpack it. Then, next to `projectMSDL.exe`:
-
-1. Create a `presets` folder and copy the contents of the Cream of the Crop ZIP into it (the category folders such as
-   `Dancer`, `Fractal` and so on).
-2. Create a `textures` folder and copy the contents of the `textures` folder from the texture pack ZIP into it.
-3. Optional, for portable mode: create a file named `portable.txt`. Settings and favorites are then kept in a
-   `userdata` folder next to the exe.
+The install folder then contains `projectMSDL.exe` and the optional, commented default `projectMSDL.properties`. To
+get the same layout as the release download, add the `presets` and `textures` folders (see below) and a
+`portable.txt` file next to the exe:
 
 ```
 projectMSDL.exe
-portable.txt     (optional)
+projectMSDL.properties  (optional)
+portable.txt            (optional, turns on portable mode)
 presets\
   Dancer\
   Fractal\
@@ -144,8 +142,39 @@ presets\
 textures\
 ```
 
-If no preset or texture path is set, these `presets` and `textures` folders next to the exe are used automatically. To
-use presets or textures from somewhere else instead, set their paths in **File > Settings**.
+### Building the release zip
+
+[`packaging/windows-portable/make-release.ps1`](packaging/windows-portable/make-release.ps1) creates
+`projectMSDL-portable-windows-x64.zip` exactly as it is published in the releases. Run it from the repository folder:
+
+```shell
+powershell -ExecutionPolicy Bypass -File packaging\windows-portable\make-release.ps1
+```
+
+It builds the static exe (and configures `cmake-build-static` first if it doesn't exist yet), installs it into a clean
+folder, downloads the current presets and textures from the official repositories, adds `portable.txt`, `README.txt`
+(both from `packaging/windows-portable`) and `LICENSE.md`, starts the exe for a few seconds as a test and zips it all
+into a `release` folder next to the repository. Your own install and settings aren't touched. `-OutputDir` changes
+where the zip is created and `-SkipTest` skips the test start.
+
+## Presets and textures
+
+The release download includes the presets and textures, unchanged from the official projectM repositories:
+
+- **Presets:** [presets-cream-of-the-crop](https://github.com/projectM-visualizer/presets-cream-of-the-crop) by Jason
+  Fletcher, about 9,800 hand-picked Milkdrop presets. This is projectM's default preset pack. See its `LICENSE.md` (also
+  in the `presets` folder of the download).
+- **Textures:** [presets-milkdrop-texture-pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack),
+  the images many presets use.
+
+If no preset or texture path is set, the `presets` and `textures` folders next to the exe are used automatically. To
+use other presets or textures, set their paths in **File > Settings**. When building it yourself, get them from the
+links above: in the texture pack, the images are inside its `textures` folder.
+
+---
+
+*The original projectM SDL2 frontend README follows. Its build instructions still work and build the regular version,
+with the libraries as separate DLLs.*
 
 
 # ProjectM SDL2 Frontend
