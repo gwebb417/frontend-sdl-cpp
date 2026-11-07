@@ -196,6 +196,21 @@ void ProjectMWrapper::RenderFrame()
         if (!_audioStagingBuffer.empty())
         {
             poco_assert(_audioStagingBuffer.size() % _audioChannels == 0);
+
+            // libprojectM 4.x stores the beat sensitivity (projectm_set_beat_sensitivity), but never uses it,
+            // so the setting had no effect. Apply it here instead by scaling the samples, which scales the
+            // bass/mid/treb values presets react to (and the waveforms drawn from the audio): 0 = no reaction
+            // to the music, 1 = normal, 2 = twice as strong. This happens in the same frame the samples are
+            // passed to projectM, so it adds no latency. At the default of 1.0 the samples are passed unchanged.
+            auto beatSensitivity = projectm_get_beat_sensitivity(_projectM);
+            if (beatSensitivity != 1.0f)
+            {
+                for (auto& sample : _audioStagingBuffer)
+                {
+                    sample *= beatSensitivity;
+                }
+            }
+
             projectm_pcm_add_float(_projectM, _audioStagingBuffer.data(), _audioStagingBuffer.size() / _audioChannels, static_cast<projectm_channels>(_audioChannels));
             _audioStagingBuffer.clear();
         }

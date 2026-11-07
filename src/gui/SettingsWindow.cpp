@@ -359,7 +359,7 @@ void SettingsWindow::DrawAudioSettingsTab()
             AudioDeviceSetting();
 
             ImGui::TableNextRow();
-            LabelWithTooltip("Beat Sensitivity", "Beat detection multiplier.");
+            LabelWithTooltip("Beat Sensitivity", "How strongly presets react to the music: 0 = not at all, 1 = normal, 2 = twice as strong. Also changes the size of waveforms drawn from the audio. Up/Down arrow keys change it too.");
             DoubleSetting("projectM.beatSensitivity", 1.0, 0.0, 2.0);
 
             ImGui::EndTable();

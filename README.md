@@ -3,15 +3,20 @@ toasts, settings and the UI. It also includes the preset search window from upst
 
 This is an unofficial fork, not an official projectM release.
 
-## Download (Windows)
+## Download
 
-Get `projectMSDL-portable-windows-x64.zip` from the [latest release](https://github.com/gwebb417/frontend-sdl-cpp/releases/latest),
-unzip it anywhere and run `projectMSDL.exe`. It's a single exe with no DLLs or installation needed, and it already
-includes the presets and textures (see [Presets and textures](#presets-and-textures)). It runs in
-[portable mode](#new-features), so settings and favorites are kept in the unzipped folder.
+Both downloads are on the [latest release](https://github.com/gwebb417/frontend-sdl-cpp/releases/latest) page. They
+already include the presets and textures (see [Presets and textures](#presets-and-textures)) and run in
+[portable mode](#new-features), so settings and favorites are kept in the unpacked folder.
 
-If Windows shows "Windows protected your PC", click **More info** and then **Run anyway**. This appears because the exe
-isn't code-signed.
+**Windows:** get `projectMSDL-portable-windows-x64.zip`, unzip it anywhere and run `projectMSDL.exe`. It's a single
+exe with no DLLs or installation needed. If Windows shows "Windows protected your PC", click **More info** and then
+**Run anyway**. This appears because the exe isn't code-signed.
+
+**Linux (x86_64):** get `projectMSDL-portable-linux-x86_64.tar.gz`, unpack it anywhere and run `./projectMSDL` in the
+unpacked folder. It needs glibc 2.35 or newer (e.g. Ubuntu 22.04+, Debian 12, Fedora 36+, Arch) plus SDL2 and
+FreeType, which almost every desktop Linux already has. The included `README.txt` lists the install commands in case
+they're missing.
 
 ## What's different in this fork
 
@@ -53,6 +58,9 @@ isn't code-signed.
   window was positioned past the monitor edge.
 - Reset buttons were cut off ("Res") at larger UI scales.
 - Built-in defaults (mesh size, window size, V-Sync, logo preset) now match the shipped config file.
+- **Beat Sensitivity** had no effect, because libprojectM 4 stores the value but never uses it. The app now applies it
+  itself by scaling the audio passed to projectM: 0 = presets don't react to the music, 1 = normal, 2 = twice as strong.
+  This adds no latency.
 
 ## Keybinds
 
@@ -156,6 +164,15 @@ folder, downloads the current presets and textures from the official repositorie
 (both from `packaging/windows-portable`) and `LICENSE.md`, starts the exe for a few seconds as a test and zips it all
 into a `release` folder next to the repository. Your own install and settings aren't touched. `-OutputDir` changes
 where the zip is created and `-SkipTest` skips the test start.
+
+### Building the Linux release
+
+The Linux tarball is built on GitHub by the
+[Portable Linux Release](.github/workflows/release-linux-portable.yaml) workflow (Actions tab > Portable Linux Release >
+Run workflow). It builds on Ubuntu 22.04 with Poco and libprojectM linked in statically, adds the presets, textures and
+the files from `packaging/linux-portable`, starts the program for 10 seconds on a virtual display as a test and
+creates `projectMSDL-portable-linux-x86_64.tar.gz`. Enter a release tag to attach it to that release, otherwise it can
+be downloaded from the workflow run.
 
 ## Presets and textures
 
