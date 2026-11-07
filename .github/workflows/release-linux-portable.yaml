@@ -1,0 +1,176 @@
+# Portable Linux release of this fork, the Linux counterpart to packaging/windows-portable/make-release.ps1.
+#
+# Builds projectMSDL on Ubuntu 22.04 (so it runs on glibc 2.35+ distros) with Poco and libprojectM linked
+# statically. SDL2 and FreeType are used from the system, like in the official Linux release, because they
+# load the system's audio/video drivers and fonts and are installed on practically every desktop Linux.
+#
+# The result is projectMSDL-portable-linux-x86_64.tar.gz with the same layout as the Windows zip:
+# the program, portable.txt, README.txt, LICENSE.md, the default config, presets/ and textures/.
+#
+# Run it manually from the Actions tab ("Run workflow"). If "release_tag" is set, the tarball is also
+# attached to that existing GitHub release.
+name: Portable Linux Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to attach the tarball to (leave empty to only create a workflow artifact)"
+        required: false
+        default: ""
+        type: string
+      projectMref:
+        description: "libprojectM Git reference (tag, branch or commit). Same version as the Windows build (vcpkg)."
+        required: true
+        default: "v4.1.7"
+        type: string
+      pocoref:
+        description: "POCO Git reference (tag, branch or commit)"
+        required: true
+        default: "poco-1.14.1"
+        type: string
+
+permissions:
+  contents: write # only needed to attach the tarball to a release
+
+jobs:
+  build:
+    name: Portable tarball, Ubuntu 22.04 x86_64
+    runs-on: ubuntu-22.04
+
+    env:
+      PACKAGE_NAME: projectMSDL-portable-linux-x86_64
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build libgl1-mesa-dev mesa-common-dev libsdl2-dev libssl-dev libfreetype6-dev xvfb
+
+      # Ubuntu 22.04 ships Poco 1.11.0, which projectMSDL can't use, so build it as static libraries.
+      - name: Checkout Poco
+        uses: actions/checkout@v6
+        with:
+          repository: pocoproject/poco
+          path: poco
+          ref: ${{ inputs.pocoref }}
+          submodules: recursive
+
+      - name: Build Poco
+        run: |
+          cmake -G Ninja -S poco -B cmake-build-poco \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install-poco" \
+            -DENABLE_MONGODB=OFF \
+            -DENABLE_REDIS=OFF \
+            -DENABLE_PAGECOMPILER=OFF \
+            -DENABLE_PAGECOMPILER_FILE2PAGE=OFF \
+            -DENABLE_ACTIVERECORD=OFF \
+            -DENABLE_ACTIVERECORD_COMPILER=OFF \
+            -DENABLE_DATA_ODBC=OFF \
+            -DENABLE_DATA_POSTGRESQL=OFF \
+            -DENABLE_DATA_MYSQL=OFF \
+            -DENABLE_JWT=OFF \
+            -DENABLE_PROMETHEUS=OFF
+          cmake --build cmake-build-poco --parallel
+          cmake --install cmake-build-poco
+
+      - name: Checkout libprojectM
+        uses: actions/checkout@v6
+        with:
+          repository: projectM-visualizer/projectm
+          path: projectm
+          ref: ${{ inputs.projectMref }}
+          submodules: recursive
+
+      - name: Build libprojectM
+        run: |
+          cmake -G Ninja -S projectm -B cmake-build-libprojectm \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install-libprojectm"
+          cmake --build cmake-build-libprojectm --parallel
+          cmake --install cmake-build-libprojectm
+
+      - name: Checkout projectMSDL (this fork)
+        uses: actions/checkout@v6
+        with:
+          path: frontend-sdl2
+          submodules: recursive
+
+      - name: Checkout Cream of the Crop presets
+        uses: actions/checkout@v6
+        with:
+          repository: projectM-visualizer/presets-cream-of-the-crop
+          path: presets-cream-of-the-crop
+
+      - name: Checkout Milkdrop texture pack
+        uses: actions/checkout@v6
+        with:
+          repository: projectM-visualizer/presets-milkdrop-texture-pack
+          path: presets-milkdrop-texture-pack
+
+      - name: Build projectMSDL
+        run: |
+          cmake -G Ninja -S frontend-sdl2 -B cmake-build-frontend-sdl2 \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/install-libprojectm;$GITHUB_WORKSPACE/install-poco" \
+            '-DDEFAULT_CONFIG_PATH=${application.dir}/' \
+            '-DDEFAULT_PRESETS_PATH=${application.dir}/presets/' \
+            '-DDEFAULT_TEXTURES_PATH=${application.dir}/textures/' \
+            -DENABLE_FLAT_PACKAGE=ON
+          cmake --build cmake-build-frontend-sdl2 --parallel
+
+      - name: Assemble package folder
+        run: |
+          pkg="$GITHUB_WORKSPACE/$PACKAGE_NAME"
+          cmake --install cmake-build-frontend-sdl2 --prefix "$pkg" --strip
+          mkdir -p "$pkg/presets" "$pkg/textures"
+          # Presets including the pack's LICENSE.md/README.md, but without its .git folder
+          rsync -a --exclude .git presets-cream-of-the-crop/ "$pkg/presets/"
+          # The images are in the pack's textures subfolder. Its README.md credits the textures.
+          cp -r presets-milkdrop-texture-pack/textures/. "$pkg/textures/"
+          cp presets-milkdrop-texture-pack/README.md "$pkg/textures/"
+          cp frontend-sdl2/packaging/linux-portable/portable.txt frontend-sdl2/packaging/linux-portable/README.txt "$pkg/"
+          cp frontend-sdl2/LICENSE.md "$pkg/"
+          ls -la "$pkg"
+          echo "Presets: $(find "$pkg/presets" -name '*.milk' | wc -l), textures: $(find "$pkg/textures" -type f ! -name '*.md' | wc -l)"
+          echo "Shared libraries used:"
+          ldd "$pkg/projectMSDL"
+
+      # Start it on a virtual display (software OpenGL, no sound card). It must still be running after
+      # 10 seconds; "timeout" then ends it with exit code 124.
+      - name: Smoke test
+        run: |
+          cd "$GITHUB_WORKSPACE/$PACKAGE_NAME"
+          set +e
+          SDL_AUDIODRIVER=dummy timeout 10 xvfb-run -a -s "-screen 0 1280x720x24" ./projectMSDL
+          code=$?
+          set -e
+          echo "Exit code: $code"
+          echo "--- log ---"
+          cat userdata/projectMSDL.log || true
+          # Never ship settings or favorites
+          rm -rf userdata
+          if [ "$code" -ne 124 ]; then
+            echo "::error::projectMSDL exited early with code $code"
+            exit 1
+          fi
+
+      - name: Create tarball
+        run: tar -czf "$PACKAGE_NAME.tar.gz" "$PACKAGE_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: ${{ env.PACKAGE_NAME }}.tar.gz
+          # The tarball is already compressed
+          compression-level: 0
+
+      - name: Attach to release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.release_tag }}" "$PACKAGE_NAME.tar.gz" --clobber --repo "$GITHUB_REPOSITORY"

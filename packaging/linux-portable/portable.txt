@@ -1,0 +1,7 @@
+This file turns on portable mode.
+
+While this file is next to projectMSDL, your settings, favorites, UI layout
+and log file are stored in the "userdata" folder next to it, instead of in
+~/.config/projectM. You can then move or copy the whole folder anywhere.
+
+Delete this file to store them in ~/.config/projectM again.
