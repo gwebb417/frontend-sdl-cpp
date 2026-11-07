@@ -276,7 +276,7 @@ void SettingsWindow::DrawWindowSettingsTab()
 
             ImGui::TableNextRow();
             LabelWithTooltip("  Window Position",
-                             "Window position. Applies immediately (or when leaving fullscreen) and on startup.\nThe coordinates are relative to the selected monitor (or absolute if Monitor is 0).");
+                             "Window position. Applies immediately (or when leaving fullscreen) and on startup.\nThe coordinates are relative to the selected monitor (or absolute if Monitor is 0).\nA borderless window is always kept fully on its monitor.");
             WindowPositionSetting();
 
             ImGui::TableNextRow();
@@ -286,7 +286,7 @@ void SettingsWindow::DrawWindowSettingsTab()
 
             ImGui::TableNextRow();
             LabelWithTooltip("Borderless Window",
-                             "Don't display the window border and title bar if the OS supports it.\nCan make the window immovable.");
+                             "Don't display the window border and title bar if the OS supports it.\nCan make the window immovable.\nA borderless window is kept fully on its monitor: Windows shows a borderless, monitor-sized window\nlike fullscreen at the monitor's corner, so placing it elsewhere would offset the mouse.");
             BooleanSetting("window.borderless", false);
 
             ImGui::TableNextRow();
@@ -423,6 +423,8 @@ void SettingsWindow::DrawHelpTab() const
         ImGui::TextWrapped("%s", "Window size, position and monitor apply immediately and are also used on the next start. In fullscreen, size and position are applied when leaving fullscreen, while a monitor change moves the fullscreen window right away.");
         ImGui::Bullet();
         ImGui::TextWrapped("%s", "\"Use Current Size and Position\" copies the window's current size, position and monitor into the settings.");
+        ImGui::Bullet();
+        ImGui::TextWrapped("%s", "A borderless window is always kept fully on its monitor. Otherwise Windows may show it at the monitor corner while the window is somewhere else, which offsets the mouse.");
 
         ImGui::EndTabItem();
     }

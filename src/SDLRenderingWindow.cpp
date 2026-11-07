@@ -14,6 +14,8 @@
 
 #include <SDL2/SDL_opengl.h>
 
+#include <algorithm>
+
 const char* SDLRenderingWindow::name() const
 {
     return "SDL2 Rendering Window";
@@ -136,6 +138,43 @@ void SDLRenderingWindow::Windowed()
         _pendingPosition = false;
         ApplyWindowPosition();
     }
+
+    KeepBorderlessWindowOnDisplay();
+}
+
+void SDLRenderingWindow::KeepBorderlessWindowOnDisplay()
+{
+    if (_fullscreen || !_config->getBool("borderless", false))
+    {
+        return;
+    }
+
+    // The monitor the window's center is on.
+    const int displayIndex = SDL_GetWindowDisplayIndex(_renderingWindow);
+    SDL_Rect bounds;
+    if (displayIndex < 0 || SDL_GetDisplayBounds(displayIndex, &bounds) != 0)
+    {
+        return;
+    }
+
+    int left{0};
+    int top{0};
+    int width{0};
+    int height{0};
+    SDL_GetWindowPosition(_renderingWindow, &left, &top);
+    SDL_GetWindowSize(_renderingWindow, &width, &height);
+
+    // Keep the right/bottom edge on the monitor first, then the left/top edge, so a window
+    // larger than the monitor is aligned to the monitor's top-left corner.
+    int newLeft = std::max(std::min(left, bounds.x + bounds.w - width), bounds.x);
+    int newTop = std::max(std::min(top, bounds.y + bounds.h - height), bounds.y);
+
+    if (newLeft != left || newTop != top)
+    {
+        SDL_SetWindowPosition(_renderingWindow, newLeft, newTop);
+        poco_information_f4(_logger, "Moved borderless window from X=%?d Y=%?d to X=%?d Y=%?d to keep it on its monitor.",
+                            left, top, newLeft, newTop);
+    }
 }
 
 void SDLRenderingWindow::ApplyPendingConfigChanges()
@@ -172,6 +211,8 @@ void SDLRenderingWindow::ApplyPendingConfigChanges()
     _pendingMonitor = false;
     _pendingFullscreenMode = false; // Picked up the next time fullscreen is entered.
 
+    const bool placementChanged = _pendingSize || _pendingPosition;
+
     if (_pendingSize)
     {
         _pendingSize = false;
@@ -183,6 +224,11 @@ void SDLRenderingWindow::ApplyPendingConfigChanges()
     {
         _pendingPosition = false;
         ApplyWindowPosition();
+    }
+
+    if (placementChanged)
+    {
+        KeepBorderlessWindowOnDisplay();
     }
 }
 
@@ -552,6 +598,10 @@ void SDLRenderingWindow::OnConfigurationPropertyRemoved(const std::string& key)
     if (key == "window.borderless")
     {
         SDL_SetWindowBordered(_renderingWindow, _config->getBool("borderless", false) ? SDL_FALSE : SDL_TRUE);
+        if (!_fullscreen)
+        {
+            KeepBorderlessWindowOnDisplay();
+        }
     }
 
     if (key == "window.displayPresetNameInTitle")

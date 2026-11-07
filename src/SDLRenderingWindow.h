@@ -152,6 +152,18 @@ protected:
      */
     void ApplyWindowPosition();
 
+    /**
+     * @brief If the window is borderless (and not fullscreen), moves it so it's fully inside its monitor.
+     *
+     * On Windows, a borderless window covering a whole monitor is presented like a fullscreen window
+     * at the monitor's origin by DWM/the graphics driver, even if the window itself is placed elsewhere
+     * (e.g. at X=200, hanging off onto the next monitor). The picture then doesn't match the actual
+     * window position, so all mouse input appears offset by the window position, and the part on the
+     * other monitor never updates. A borderless window can't be dragged anyway, so keeping it inside
+     * its monitor has no downside.
+     */
+    void KeepBorderlessWindowOnDisplay();
+
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _userConfig; //!< View of the "projectM" configuration subkey in the "user" configuration.
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _config; //!< View of the "window" configuration subkey.
 
