@@ -61,6 +61,8 @@ they're missing.
 - **Beat Sensitivity** had no effect, because libprojectM 4 stores the value but never uses it. The app now applies it
   itself by scaling the audio passed to projectM: 0 = presets don't react to the music, 1 = normal, 2 = twice as strong.
   This adds no latency.
+- The app could freeze when switching presets (mostly on Linux, e.g. pressing R): the audio thread and the preset
+  switch could each wait for a lock the other held. Audio data now uses its own notification channel.
 
 ## Keybinds
 
