@@ -115,14 +115,37 @@ cmake --install cmake-build-static --config Release
 ```
 
 The install folder then contains `projectMSDL.exe` and the optional, commented default `projectMSDL.properties`. For
-a portable setup, add next to the exe:
+a portable setup, add `presets\`, `textures\` and `portable.txt` next to the exe, see below.
 
-- `presets\`: e.g. [Cream of the Crop](https://github.com/projectM-visualizer/presets-cream-of-the-crop)
-- `textures\`: e.g. the [Milkdrop texture pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack)
-- `portable.txt`: turns on portable mode, settings and favorites are then kept in `userdata\`
+## Presets and textures
 
-If no preset/texture path is set, the `presets` and `textures` folders next to the exe are used, with or without
-`projectMSDL.properties`.
+The presets and textures are not included and are downloaded separately from the official projectM repositories:
+
+- **Presets:** [presets-cream-of-the-crop](https://github.com/projectM-visualizer/presets-cream-of-the-crop), about
+  9,800 hand-picked Milkdrop presets. This is the default preset pack of projectM.
+- **Textures:** [presets-milkdrop-texture-pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack),
+  the images many presets use. Without them, those presets may look wrong.
+
+On each page, click **Code > Download ZIP** and unpack it. Then, next to `projectMSDL.exe`:
+
+1. Create a `presets` folder and copy the contents of the Cream of the Crop ZIP into it (the category folders such as
+   `Dancer`, `Fractal` and so on).
+2. Create a `textures` folder and copy the contents of the `textures` folder from the texture pack ZIP into it.
+3. Optional, for portable mode: create a file named `portable.txt`. Settings and favorites are then kept in a
+   `userdata` folder next to the exe.
+
+```
+projectMSDL.exe
+portable.txt     (optional)
+presets\
+  Dancer\
+  Fractal\
+  ...
+textures\
+```
+
+If no preset or texture path is set, these `presets` and `textures` folders next to the exe are used automatically. To
+use presets or textures from somewhere else instead, set their paths in **File > Settings**.
 
 
 # ProjectM SDL2 Frontend
