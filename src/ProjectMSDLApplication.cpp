@@ -48,6 +48,16 @@ Poco::AutoPtr<Poco::Util::MapConfiguration> ProjectMSDLApplication::CommandLineC
     return _commandLineOverrides;
 }
 
+Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> ProjectMSDLApplication::DefaultConfiguration()
+{
+    return _defaultConfiguration;
+}
+
+const std::string& ProjectMSDLApplication::DefaultConfigurationPath() const
+{
+    return _defaultConfigurationPath;
+}
+
 void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
 {
     // Application settings are PRIO_APPLICATION, higher values have lower precedence.
@@ -60,7 +70,17 @@ void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
 
     try
     {
-        if (loadConfiguration(PRIO_DEFAULT) == 0)
+        if (loadConfiguration(PRIO_DEFAULT) > 0)
+        {
+            // Also keep a standalone copy of the file, see DefaultConfiguration().
+            Poco::Path appConfigFilePath;
+            if (findAppConfigFile(config().getString("application.baseName"), "properties", appConfigFilePath))
+            {
+                _defaultConfiguration->load(appConfigFilePath.toString());
+                _defaultConfigurationPath = appConfigFilePath.toString();
+            }
+        }
+        else
         {
             // The file may be located in the ../Resources bundle dir on macOS, elsewhere relative
             // to the executable or within an absolute path.
@@ -76,6 +96,8 @@ void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
                 if (Poco::File(configFilePath).exists())
                 {
                     loadConfiguration(configFilePath.toString(), PRIO_DEFAULT);
+                    _defaultConfiguration->load(configFilePath.toString());
+                    _defaultConfigurationPath = configFilePath.toString();
                 }
             }
         }

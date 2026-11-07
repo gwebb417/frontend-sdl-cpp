@@ -29,6 +29,18 @@ public:
      */
     Poco::AutoPtr<Poco::Util::MapConfiguration> CommandLineConfiguration();
 
+    /**
+     * @brief Returns a standalone copy of the default configuration file (projectMSDL.properties).
+     * Used by the settings window to tell whether a user setting differs from the value it would
+     * fall back to. Empty if no default configuration file was found.
+     */
+    Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> DefaultConfiguration();
+
+    /**
+     * @brief Returns the full path of the loaded default configuration file, or an empty string if none was found.
+     */
+    const std::string& DefaultConfigurationPath() const;
+
 protected:
     void initialize(Application& self) override;
 
@@ -51,4 +63,7 @@ protected:
         new Poco::Util::PropertyFileConfiguration()}; //!< The current user's configuration, used to store/reset changes made in the UI's settings dialog.
     Poco::AutoPtr<Poco::Util::MapConfiguration> _commandLineOverrides{
         new Poco::Util::MapConfiguration()}; //!< Map configuration with overrides set by command line arguments.
+    Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> _defaultConfiguration{
+        new Poco::Util::PropertyFileConfiguration()}; //!< Standalone copy of the default configuration file, see DefaultConfiguration().
+    std::string _defaultConfigurationPath; //!< Path of the loaded default configuration file.
 };

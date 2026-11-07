@@ -38,6 +38,8 @@ void RenderLoop::Run()
         limiter.StartFrame();
 
         PollEvents();
+        // Apply window size/position/monitor/fullscreen changes from the settings window once per frame.
+        _sdlRenderingWindow.ApplyPendingConfigChanges();
         CheckViewportSize();
         _audioCapture.FillBuffer();
         _projectMWrapper.RenderFrame();

@@ -1,8 +1,44 @@
-I forked this because I wanted to be able to save favorite presets.
-I also fixed issues with toast messages and brought back toast messages for shuffle.
-It also includes the preset search window from upstream PR #139.
+I forked this because I wanted to be able to save favorite presets. Along the way I fixed a number of issues with
+toasts, settings and the UI. It also includes the preset search window from upstream PR #139.
+
+## What's different in this fork
+
+### New features
+
+- **Favorites:** save presets to a favorites folder, play only your favorites, remove them again and undo (see
+  [Keybinds](#keybinds)).
+- **Preset search window:** from upstream PR #139, plus fixes. Old key presses no longer end up in the search
+  field, the window no longer closes right after opening, and it no longer crashes when no presets are loaded.
+- **Toasts** for Space (lock), Y (shuffle), A (aspect correction), Ctrl+C (copy path) and all favorites actions.
+  Toasts are shown in the top-right corner and no longer disappear instantly.
+- **Quick Help** (Help menu) lists all keys, grouped by feature.
+
+### Settings window (File > Settings)
+
+- **Type-in values instead of sliders:** type a number and press Enter or click **Apply**. Typed values that aren't
+  applied yet are highlighted orange. Tab moves to the next box without applying, Up/Down steps the value and Escape
+  cancels.
+- **Most settings apply immediately,** including window size, position, monitor, exclusive fullscreen resolution,
+  beat sensitivity and UI scale. Settings marked with **\*** are only used on startup.
+- **Shows the values actually in use,** including those from the default `projectMSDL.properties`.
+- **Reset** only appears when a value differs from its default, and disappears when you set it back.
+- **UI Scaling Factor** now scales the whole UI, not just toasts.
+- The **Help** tab explains all of the above and shows which default config file is used.
+
+### Bug fixes
+
+- Shuffle no longer turns itself off after pressing N, P or R.
+- M opens the preset search; Ctrl+M only moves the window to the next monitor.
+- "Exclusive Mode Resolution" had no effect (wrong setting name).
+- "Enable Hard Cuts" toggled aspect correction instead of hard cuts.
+- The "Play Next Preset" menu item went to the previous preset.
+- Mouse input in the UI was offset on some multi-monitor setups.
+- Reset buttons were cut off ("Res") at larger UI scales.
+- Built-in defaults (mesh size, window size, V-Sync, logo preset) now match the shipped config file.
 
 ## Keybinds
+
+All keys are also listed in the app under **Help > Quick Help**.
 
 ### Favorites (new in this fork)
 

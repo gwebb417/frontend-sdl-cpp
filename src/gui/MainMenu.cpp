@@ -5,6 +5,7 @@
 #include "ProjectMWrapper.h"
 
 #include "gui/ProjectMGUI.h"
+#include "gui/NumberInput.h"
 #include "gui/SystemBrowser.h"
 
 #include "notifications/PlaybackControl.h"
@@ -121,7 +122,8 @@ void MainMenu::Draw()
             ImGui::Separator();
 
             float beatSensitivity = projectm_get_beat_sensitivity(_projectMWrapper.ProjectM());
-            if (ImGui::SliderFloat("Beat Sensitivity", &beatSensitivity, 0.0f, 2.0f))
+            // Type-in box with Apply button instead of a slider, see NumberInput.h.
+            if (NumberInput::Float("##beat_sensitivity", &beatSensitivity, 0.0f, 2.0f, "Beat Sensitivity"))
             {
                 projectm_set_beat_sensitivity(_projectMWrapper.ProjectM(), beatSensitivity);
                 app.UserConfiguration()->setDouble("projectM.beatSensitivity", beatSensitivity);

@@ -13,6 +13,7 @@
 
 #include <Poco/Util/Application.h>
 
+#include <string>
 #include <utility>
 
 const char* ProjectMGUI::name() const
@@ -98,7 +99,15 @@ void ProjectMGUI::UpdateFontSize()
     _toastFont = io.Fonts->AddFontFromMemoryCompressedTTF(&LiberationSans_compressed_data, LiberationSans_compressed_size, floor(40.0f * _textScalingFactor));
     io.Fonts->Build();
 
-    ImGui::GetStyle().ScaleAllSizes(1.0);
+    // Since Dear ImGui 1.92, the default (UI) font size is style.FontSizeBase, which is only taken from the
+    // first font's size once, on the very first frame. Rebuilding the fonts alone would then only resize
+    // text using an explicit PushFont() (e.g. toasts). Update the base size so the whole UI follows.
+    // _NextFrameFontSizeBase is the documented way to apply this on the next NewFrame() (used by ImGui's style editor too).
+    auto& style = ImGui::GetStyle();
+    style.FontSizeBase = _uiFont->LegacySize;
+    style._NextFrameFontSizeBase = _uiFont->LegacySize;
+
+    style.ScaleAllSizes(1.0);
 }
 
 void ProjectMGUI::ProcessInput(const SDL_Event& event)
@@ -157,6 +166,23 @@ void ProjectMGUI::Draw()
     }
 
     ImGui_ImplSDL2_NewFrame();
+
+    // While the app is focused, the ImGui SDL2 backend sets the mouse position every frame from
+    // "global mouse position - SDL_GetWindowPosition()". On Windows multi-monitor setups (seen with
+    // monitors at non-zero/negative desktop coordinates), that value was off by several hundred pixels
+    // in about half the frames, offsetting all mouse input in the UI.
+    // While the mouse is over our window, SDL's own window-relative mouse state (the same source as
+    // SDL_MOUSEMOTION events) is reliable, so queue it last to override the backend's value.
+    {
+        int mouseX{0};
+        int mouseY{0};
+        SDL_GetMouseState(&mouseX, &mouseY);
+        if (SDL_GetMouseFocus() == _renderingWindow && !SDL_GetRelativeMouseMode())
+        {
+            io.AddMousePosEvent(static_cast<float>(mouseX), static_cast<float>(mouseY));
+        }
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
 

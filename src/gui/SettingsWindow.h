@@ -74,47 +74,35 @@ private:
     void BooleanSetting(const std::string& property, bool defaultValue);
 
     /**
-     * @brief Displays a slider to set an integer min/max value.
+     * @brief Displays number input box(es) with an Apply button to set an integer min/max value.
      * @param property The property name in the config.
      * @param defaultValue Default value for the property if not set.
-     * @param min Minimum slider value.
-     * @param max Maximum slider value.
+     * @param min Minimum value.
+     * @param max Maximum value.
      */
     void IntegerSetting(const std::string& property, int defaultValue, int min, int max);
 
     /**
-     * @brief Displays a slider to set two integer min/max values.
+     * @brief Displays number input box(es) with an Apply button to set two integer min/max values.
      * @param property1 The first property name in the config.
      * @param property2 The second property name in the config.
      * @param defaultValue1 Default value for the first property if not set.
      * @param defaultValue2 Default value for the second property if not set.
-     * @param min Minimum slider value.
-     * @param max Maximum slider value.
+     * @param min Minimum value.
+     * @param max Maximum value.
      */
     void IntegerSettingVec(const std::string& property1, const std::string& property2,
                            int defaultValue1, int defaultValue2,
                            int min, int max);
 
     /**
-     * @brief Displays a slider to set a double min/max value.
+     * @brief Displays number input box(es) with an Apply button to set a double min/max value.
      * @param property The property name in the config.
      * @param defaultValue Default value for the property if not set.
-     * @param min Minimum slider value.
-     * @param max Maximum slider value.
+     * @param min Minimum value.
+     * @param max Maximum value.
      */
     void DoubleSetting(const std::string& property, double defaultValue, double min, double max);
-
-    /**
-     * @brief Displays a slider to select a double min/max value and an "Apply" button to set the value.
-     * Useful if the slider affects UI rendering (e.g. scaling).
-     * @param property The property name in the config.
-     * @param defaultValue Default value for the property if not set.
-     * @param min Minimum slider value.
-     * @param max Maximum slider value.
-     * @param tempValue The storage location for the displayed slider value.
-     */
-    void DoubleSettingWithApply(const std::string& property, double defaultValue, double min, double max,
-                                float& tempValue);
 
     /**
      * @brief Displays a checkbox to override the window startup position, and if this is selected, displays two sliders.
@@ -127,17 +115,41 @@ private:
     void AudioDeviceSetting();
 
     /**
-     * @brief Displays a reset button and removes the property from the UI map if clicked.
+     * @brief Displays a reset button if a property differs from its fallback value, and removes the property(s) from the user config if clicked.
      * @param property1 First property to reset.
+     * @param defaultValue1 Built-in default of the first property, used if the default config file doesn't set it.
      * @param property2 Optional second property to reset.
+     * @param defaultValue2 Built-in default of the second property.
      * @return true if the button was pressed, false otherwise.
      */
-    bool ResetButton(const std::string& property1, const std::string& property2 = "");
+    bool ResetButton(const std::string& property1, const std::string& defaultValue1,
+                     const std::string& property2 = "", const std::string& defaultValue2 = "");
+
+    /**
+     * @brief Returns the value a property falls back to without a user setting: the default config file's value, or the built-in default.
+     */
+    std::string FallbackValue(const std::string& property, const std::string& defaultValue) const;
+
+    /**
+     * @brief Returns true if the user config sets the property to a value different from its fallback value.
+     */
+    bool IsModified(const std::string& property, const std::string& defaultValue) const;
+
+    /**
+     * @brief Stores a value in the user config, or removes the property if the value equals its fallback value.
+     * This way, changing a setting back to its original value makes the Reset button disappear again.
+     */
+    void StoreSetting(const std::string& property, const std::string& value, const std::string& defaultValue);
 
     /**
      * @brief Displays a red note and a tooltip when hovered explaining the setting can't be changed now.
      */
     void OverriddenSettingMarker();
+
+    /**
+     * @brief Displays a note below a settings table explaining that settings marked with * apply on restart.
+     */
+    static void StartupOnlyNote();
 
     ProjectMGUI& _gui; //!< The GUI subsystem.
     AudioCapture& _audioCapture; //!< The audio capture subsystem.
@@ -145,10 +157,11 @@ private:
     bool _visible{false}; //!< Window visibility flag.
     bool _changed{false}; //!< true if the user changed any setting since the last save.
 
-    Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> _userConfiguration;
+    Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> _userConfiguration; //!< User settings. All changes are written here.
     Poco::AutoPtr<Poco::Util::MapConfiguration> _commandLineConfiguration;
+    Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> _defaultConfiguration; //!< Standalone copy of the default config file, for fallback values.
+    Poco::Util::AbstractConfiguration* _effectiveConfiguration{nullptr}; //!< Layered app config (command line, user settings, default config file). Used to display the values actually in effect.
 
     FileChooser _pathChooser{FileChooser::Mode::Directory}; //!< The file chooser dialog to select preset and texture paths.
 
-    float _userScale{1.0f}; //!< Temporary value for UI scale
 };

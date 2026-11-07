@@ -74,7 +74,11 @@ void SDLRenderingWindow::ToggleFullscreen()
 
 void SDLRenderingWindow::Fullscreen()
 {
-    SDL_GetWindowSize(_renderingWindow, &_lastWindowWidth, &_lastWindowHeight);
+    if (!_fullscreen)
+    {
+        // Only remember the windowed size, not a previous fullscreen size.
+        SDL_GetWindowSize(_renderingWindow, &_lastWindowWidth, &_lastWindowHeight);
+    }
     SDL_ShowCursor(false);
     if (_config->getBool("fullscreen.exclusiveMode", false))
     {
@@ -125,6 +129,97 @@ void SDLRenderingWindow::Windowed()
     }
 
     _fullscreen = false;
+
+    // Position changes made while in fullscreen are applied when returning to windowed mode.
+    if (_pendingPosition)
+    {
+        _pendingPosition = false;
+        ApplyWindowPosition();
+    }
+}
+
+void SDLRenderingWindow::ApplyPendingConfigChanges()
+{
+    if (!_renderingWindow)
+    {
+        return;
+    }
+
+    if (_fullscreen)
+    {
+        if (_pendingSize)
+        {
+            // Used when leaving fullscreen.
+            _pendingSize = false;
+            _lastWindowWidth = _config->getInt("width", 1920);
+            _lastWindowHeight = _config->getInt("height", 1080);
+        }
+
+        if (_pendingMonitor || _pendingFullscreenMode)
+        {
+            // Leave and re-enter fullscreen to switch monitor and/or exclusive resolution.
+            // Windowed() also applies a pending position, which places the window on the new monitor.
+            _pendingMonitor = false;
+            _pendingFullscreenMode = false;
+            Windowed();
+            Fullscreen();
+        }
+
+        // Pure position changes stay pending until fullscreen is left.
+        return;
+    }
+
+    _pendingMonitor = false;
+    _pendingFullscreenMode = false; // Picked up the next time fullscreen is entered.
+
+    if (_pendingSize)
+    {
+        _pendingSize = false;
+        SDL_RestoreWindow(_renderingWindow); // Un-maximize, otherwise the new size is ignored.
+        SDL_SetWindowSize(_renderingWindow, _config->getInt("width", 1920), _config->getInt("height", 1080));
+    }
+
+    if (_pendingPosition)
+    {
+        _pendingPosition = false;
+        ApplyWindowPosition();
+    }
+}
+
+void SDLRenderingWindow::ApplyWindowPosition()
+{
+    const bool positionOverridden = _config->getBool("overridePosition", false);
+    int display = _config->getInt("monitor", 0);
+
+    const int numDisplays = SDL_GetNumVideoDisplays();
+    if (display > numDisplays)
+    {
+        display = numDisplays;
+    }
+
+    if (positionOverridden)
+    {
+        // Same logic as on startup: coordinates are relative to the selected monitor, or absolute if monitor is 0.
+        int left = _config->getInt("left", 0);
+        int top = _config->getInt("top", 0);
+        if (display > 0)
+        {
+            SDL_Rect bounds;
+            SDL_GetDisplayBounds(display - 1, &bounds);
+            left += bounds.x;
+            top += bounds.y;
+        }
+        SDL_SetWindowPosition(_renderingWindow, left, top);
+        poco_debug_f2(_logger, "Moved window to X=%?d Y=%?d.", left, top);
+    }
+    else if (display > 0)
+    {
+        // No explicit position: center the window on the selected monitor.
+        SDL_SetWindowPosition(_renderingWindow,
+                              SDL_WINDOWPOS_CENTERED_DISPLAY(display - 1),
+                              SDL_WINDOWPOS_CENTERED_DISPLAY(display - 1));
+        poco_debug_f1(_logger, "Centered window on monitor %?d.", display);
+    }
 }
 
 void SDLRenderingWindow::ShowCursor(bool visible)
@@ -198,8 +293,9 @@ void SDLRenderingWindow::CreateSDLWindow()
 {
     SDL_InitSubSystem(SDL_INIT_VIDEO);
 
-    int width{_config->getInt("width", 800)};
-    int height{_config->getInt("height", 600)};
+    // Default size matches the shipped projectMSDL.properties and the settings window (was 800x600).
+    int width{_config->getInt("width", 1920)};
+    int height{_config->getInt("height", 1080)};
     int left{_config->getInt("left", 0)};
     int top{_config->getInt("top", 0)};
     bool positionOverridden = _config->getBool("overridePosition", false);
@@ -461,5 +557,29 @@ void SDLRenderingWindow::OnConfigurationPropertyRemoved(const std::string& key)
     if (key == "window.displayPresetNameInTitle")
     {
         UpdateWindowTitle();
+    }
+
+    // Window placement and fullscreen resolution are applied in ApplyPendingConfigChanges(),
+    // so changing multiple values at once (e.g. width + height) only resizes/moves once.
+    if (key == "window.width" || key == "window.height")
+    {
+        _pendingSize = true;
+    }
+
+    if (key == "window.left" || key == "window.top" || key == "window.overridePosition")
+    {
+        _pendingPosition = true;
+    }
+
+    if (key == "window.monitor")
+    {
+        _pendingPosition = true;
+        _pendingMonitor = true;
+    }
+
+    if (key == "window.fullscreen.exclusiveMode" ||
+        ((key == "window.fullscreen.width" || key == "window.fullscreen.height") && _config->getBool("fullscreen.exclusiveMode", false)))
+    {
+        _pendingFullscreenMode = true;
     }
 }

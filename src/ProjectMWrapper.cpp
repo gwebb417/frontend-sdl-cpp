@@ -57,7 +57,9 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
 
         projectm_set_window_size(_projectM, canvasWidth, canvasHeight);
         projectm_set_fps(_projectM, fps);
-        projectm_set_mesh_size(_projectM, _projectMConfigView->getInt("meshX", 48), _projectMConfigView->getInt("meshY", 32));
+        // Mesh size defaults (96x54) match the shipped projectMSDL.properties. Previously the code used
+        // 48x32 here, 220x125 in RenderFrame() and the settings window showed 64x48.
+        projectm_set_mesh_size(_projectM, _projectMConfigView->getInt("meshX", 96), _projectMConfigView->getInt("meshY", 54));
         projectm_set_aspect_correction(_projectM, _projectMConfigView->getBool("aspectCorrectionEnabled", true));
         projectm_set_preset_locked(_projectM, _projectMConfigView->getBool("presetLocked", false));
 
@@ -173,10 +175,10 @@ void ProjectMWrapper::RenderFrame()
     size_t currentMeshX{0};
     size_t currentMeshY{0};
     projectm_get_mesh_size(_projectM, &currentMeshX, &currentMeshY);
-    if (currentMeshX != _projectMConfigView->getInt("meshX", 220) ||
-        currentMeshY != _projectMConfigView->getInt("meshY", 125))
+    if (currentMeshX != _projectMConfigView->getInt("meshX", 96) ||
+        currentMeshY != _projectMConfigView->getInt("meshY", 54))
     {
-        projectm_set_mesh_size(_projectM, _projectMConfigView->getInt("meshX", 220), _projectMConfigView->getInt("meshY", 125));
+        projectm_set_mesh_size(_projectM, _projectMConfigView->getInt("meshX", 96), _projectMConfigView->getInt("meshY", 54));
     }
 
     // Add new audio data to the instance from the staging buffer
@@ -197,7 +199,8 @@ void ProjectMWrapper::DisplayInitialPreset()
 {
     poco_assert(_playlist);
 
-    if (!_projectMConfigView->getBool("enableSplash", true))
+    // Default "false" matches the shipped projectMSDL.properties and the settings window.
+    if (!_projectMConfigView->getBool("enableSplash", false))
     {
         if (_projectMConfigView->getBool("shuffleEnabled", true))
         {
@@ -649,6 +652,12 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
 
     if (key == "projectM.meshX" || key == "projectM.meshY")
     {
-        projectm_set_mesh_size(_projectM, _projectMConfigView->getUInt64("meshX", 48), _projectMConfigView->getUInt64("meshY", 32));
+        projectm_set_mesh_size(_projectM, _projectMConfigView->getUInt64("meshX", 96), _projectMConfigView->getUInt64("meshY", 54));
+    }
+
+    // Previously only applied on startup, so changing it in the settings window had no visible effect.
+    if (key == "projectM.beatSensitivity")
+    {
+        projectm_set_beat_sensitivity(_projectM, static_cast<float>(_projectMConfigView->getDouble("beatSensitivity", 1.0)));
     }
 }

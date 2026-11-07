@@ -35,6 +35,8 @@ add_library(ProjectMSDL-GUI STATIC
         ProjectMGUI.h
         SettingsWindow.cpp
         SettingsWindow.h
+        NumberInput.cpp
+        NumberInput.h
         SystemBrowser.cpp
         SystemBrowser.h
         ToastMessage.cpp

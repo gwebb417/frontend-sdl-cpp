@@ -26,6 +26,14 @@ private:
     using CommandLineArgument = std::tuple<std::string, std::string, std::string>;
     using KeyboardShortcut = std::pair<std::string, std::string>;
 
+    /**
+     * @brief A titled group of related keyboard shortcuts, e.g. all favorites keys.
+     */
+    struct ShortcutGroup {
+        std::string title;
+        std::vector<KeyboardShortcut> shortcuts;
+    };
+
     std::vector<CommandLineArgument> _commandLineArguments; //!< Command line argument help. Similar to running the application with --help.
-    std::vector<KeyboardShortcut> _shortcuts; //!< Keyboard shortcuts
+    std::vector<ShortcutGroup> _shortcuts; //!< Keyboard shortcuts, grouped by feature.
 };

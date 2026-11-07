@@ -4,6 +4,8 @@
 
 #include <Poco/Util/Application.h>
 
+#include <algorithm>
+
 void HelpWindow::Show()
 {
     if (_commandLineArguments.empty())
@@ -38,22 +40,41 @@ void HelpWindow::Draw()
         {
             if (ImGui::BeginTabItem("Keyboard Shortcuts"))
             {
-                if (ImGui::BeginTable("Keyboard Shortcuts", 2, tableFlags))
+                // Size the function column to the longest text across all groups, so the tables line up.
+                float functionColumnWidth{0.0f};
+                for (const auto& group : _shortcuts)
                 {
-                    ImGui::TableSetupColumn("Function", ImGuiTableColumnFlags_WidthFixed, .0f);
-                    ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, .0f);
-                    ImGui::TableHeadersRow();
-
-                    for (const auto& shortcut : _shortcuts)
+                    for (const auto& shortcut : group.shortcuts)
                     {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::TextUnformatted(shortcut.first.c_str());
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::TextUnformatted(shortcut.second.c_str());
+                        functionColumnWidth = std::max(functionColumnWidth, ImGui::CalcTextSize(shortcut.first.c_str()).x);
+                    }
+                }
+
+                for (const auto& group : _shortcuts)
+                {
+                    if (!ImGui::CollapsingHeader(group.title.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+                    {
+                        continue;
                     }
 
-                    ImGui::EndTable();
+                    if (ImGui::BeginTable(group.title.c_str(), 2, tableFlags))
+                    {
+                        ImGui::TableSetupColumn("Function", ImGuiTableColumnFlags_WidthFixed, functionColumnWidth);
+                        ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthStretch, .0f);
+                        ImGui::TableHeadersRow();
+
+                        for (const auto& shortcut : group.shortcuts)
+                        {
+                            ImGui::TableNextRow();
+                            ImGui::TableSetColumnIndex(0);
+                            ImGui::TextUnformatted(shortcut.first.c_str());
+                            ImGui::TableSetColumnIndex(1);
+                            ImGui::TextWrapped("%s", shortcut.second.c_str());
+                        }
+
+                        ImGui::EndTable();
+                    }
+                    ImGui::Spacing();
                 }
                 ImGui::EndTabItem();
             }
@@ -148,25 +169,44 @@ void HelpWindow::FillCommandLineArgumentTable()
 void HelpWindow::FillKeyboardShortcutsTable()
 {
     _shortcuts = {
-        {"Quit projectM", "Ctrl+q"},
-        {"Toggle Menu/UI", "Escape"},
-        {"Next Preset in Playlist (immediate)", "n"},
-        {"Next Preset in Playlist (smooth)", "Shift+n"},
-        {"Previous Preset in Playlist (immediate)", "p"},
-        {"Previous Preset in Playlist (smooth)", "Shift+p"},
-        {"Last Played Preset (Back, immediate)", "Backspace"},
-        {"Last Played Preset (Back, smooth)", "Shift+Backspace"},
-        {"Random Preset (immediate)", "r"},
-        {"Random Preset (smooth)", "Shift+r"},
-        {"Lock Current Preset", "Spacebar"},
-        {"Toggle Shuffle", "y"},
-        {"Toggle Fullscreen", "Ctrl-f, Right Mouse"},
-        {"Toggle Aspect Correction", "Ctrl-a"},
-        {"Next Audio Input Device", "Ctrl-i"},
-        {"Move to Next Monitor", "Ctrl-m"},
-        {"Increase Beat Sensitivity by 1%", "Cursor Up"},
-        {"Decrease Beat Sensitivity by 1%", "Cursor Down"},
-        {"Add Random Waveform at Mouse Pointer", "Shift+Left Mouse"},
-        {"Clear Random Waveforms", "Middle Mouse"},
-        {"Copy Current Preset Path to Clipboard", "Ctrl-c"}};
+        {"General",
+         {{"Toggle Menu/UI", "Escape"},
+          {"Quit projectM", "Ctrl+q"},
+          {"Toggle Fullscreen", "Ctrl+f, Right Mouse"},
+          {"Move to Next Monitor", "Ctrl+m"},
+          {"Next Audio Input Device", "Ctrl+i"},
+          {"Copy Current Preset Path to Clipboard", "Ctrl+c"}}},
+
+        {"Preset Playback",
+         {{"Next Preset (immediate / smooth)", "n / Shift+n"},
+          {"Previous Preset (immediate / smooth)", "p / Shift+p"},
+          {"Last Played Preset (immediate / smooth)", "Backspace / Shift+Backspace"},
+          {"Random Preset (immediate / smooth)", "r / Shift+r"},
+          {"Lock Current Preset", "Spacebar"},
+          {"Toggle Shuffle", "y"}}},
+
+        {"Preset Search",
+         {{"Open Preset Search", "m"},
+          {"Filter List", "Type words of the preset name, in any order"},
+          {"Move Selection", "Up/Down, PgUp/PgDown, Home/End"},
+          {"Play Selected Preset (immediate / smooth)", "Enter / Shift+Enter, or Double-Click"},
+          {"Close Preset Search", "Escape"}}},
+
+        {"Favorites",
+         {{"Save Current Preset to Favorites", "s"},
+          {"Remove Current Preset from Favorites", "Delete"},
+          {"Toggle Favorites Only / All Presets", "f"},
+          {"Undo Last Save/Removal (up to 20 steps)", "Ctrl+z"}}},
+
+        {"Visuals and Audio",
+         {{"Toggle Aspect Correction", "a"},
+          {"Increase / Decrease Beat Sensitivity by 1%", "Cursor Up / Cursor Down"},
+          {"Add Random Waveform at Mouse Pointer", "Shift+Left Mouse"},
+          {"Clear Random Waveforms", "Middle Mouse"}}},
+
+        {"Settings: Number Inputs",
+         {{"Apply Typed Value(s)", "Enter, or the Apply button (unapplied boxes are orange)"},
+          {"Move to Next Box Without Applying", "Tab"},
+          {"Step Typed Value", "Cursor Up/Down (Shift: 10x), then Enter/Apply"},
+          {"Cancel Typed Value", "Escape"}}}};
 }

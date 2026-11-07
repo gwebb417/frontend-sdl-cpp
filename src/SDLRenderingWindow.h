@@ -92,6 +92,12 @@ public:
      */
     void GetWindowPosition(int& left, int& top, bool relative = false);
 
+    /**
+     * @brief Applies window size/position/monitor/fullscreen setting changes queued by the settings window.
+     * Called once per frame, so changing e.g. width and height together only resizes once.
+     */
+    void ApplyPendingConfigChanges();
+
     SDL_Window* GetRenderingWindow() const;
 
     SDL_GLContext GetGlContext() const;
@@ -141,6 +147,11 @@ protected:
      */
     void OnConfigurationPropertyRemoved(const std::string& key);
 
+    /**
+     * @brief Moves the window to the configured position/monitor (window.left/top/overridePosition/monitor).
+     */
+    void ApplyWindowPosition();
+
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _userConfig; //!< View of the "projectM" configuration subkey in the "user" configuration.
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _config; //!< View of the "window" configuration subkey.
 
@@ -155,6 +166,11 @@ protected:
     int _lastWindowHeight{ 0 };
 
     bool _fullscreen{ false };
+
+    bool _pendingSize{false}; //!< window.width/height changed.
+    bool _pendingPosition{false}; //!< window.left/top/overridePosition/monitor changed.
+    bool _pendingMonitor{false}; //!< window.monitor changed (needs re-entering fullscreen if fullscreen).
+    bool _pendingFullscreenMode{false}; //!< Exclusive fullscreen mode/resolution changed.
 
 };
 
