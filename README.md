@@ -33,6 +33,8 @@ toasts, settings and the UI. It also includes the preset search window from upst
 - "Enable Hard Cuts" toggled aspect correction instead of hard cuts.
 - The "Play Next Preset" menu item went to the previous preset.
 - Mouse input in the UI was offset on some multi-monitor setups.
+- Borderless windows are kept fully on their monitor. This fixes a mouse offset when a borderless, monitor-sized
+  window was positioned past the monitor edge.
 - Reset buttons were cut off ("Res") at larger UI scales.
 - Built-in defaults (mesh size, window size, V-Sync, logo preset) now match the shipped config file.
 
