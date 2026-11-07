@@ -447,7 +447,7 @@ void AudioCaptureImpl::CaptureThread()
 
                 if (framesAvailable > 0 && data != nullptr)
                 {
-                    Poco::NotificationCenter::defaultCenter().postNotification(
+                    Notification::AudioDataAvailable::Center().postNotification(
                         new Notification::AudioDataAvailable(_channels,
                                                            reinterpret_cast<float*>(data),
                                                            framesAvailable * _channels));

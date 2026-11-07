@@ -212,7 +212,7 @@ bool CoreAudioTapCapture::StartTap()
                   uint32_t bufferChannels = buffer.mNumberChannels > 0 ? buffer.mNumberChannels : channels;
                   unsigned int sampleCount = buffer.mDataByteSize / sizeof(float);
 
-                  Poco::NotificationCenter::defaultCenter().postNotification(
+                  Notification::AudioDataAvailable::Center().postNotification(
                       new Notification::AudioDataAvailable(bufferChannels, samples, sampleCount));
                 });
 

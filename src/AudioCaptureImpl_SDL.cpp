@@ -162,7 +162,7 @@ void AudioCaptureImpl::AudioInputCallback(void* userData, unsigned char* stream,
 
     unsigned int samples = len / sizeof(float);
 
-    Poco::NotificationCenter::defaultCenter().postNotification(
+    Notification::AudioDataAvailable::Center().postNotification(
         new Notification::AudioDataAvailable(instance->_channels,
                                            reinterpret_cast<float*>(stream),
                                            samples));

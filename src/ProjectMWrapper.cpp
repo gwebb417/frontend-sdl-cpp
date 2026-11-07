@@ -118,7 +118,7 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
     }
 
     Poco::NotificationCenter::defaultCenter().addObserver(_playbackControlNotificationObserver);
-    Poco::NotificationCenter::defaultCenter().addObserver(_audioDataAvailableNotificationObserver);
+    Notification::AudioDataAvailable::Center().addObserver(_audioDataAvailableNotificationObserver);
 
     // Observe user configuration changes (set via the settings window)
     _userConfig->propertyChanged += Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyChanged);
@@ -132,7 +132,7 @@ void ProjectMWrapper::uninitialize()
     _userConfig->propertyRemoved -= Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyRemoved);
     _userConfig->propertyChanged -= Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyChanged);
     Poco::NotificationCenter::defaultCenter().removeObserver(_playbackControlNotificationObserver);
-    Poco::NotificationCenter::defaultCenter().removeObserver(_audioDataAvailableNotificationObserver);
+    Notification::AudioDataAvailable::Center().removeObserver(_audioDataAvailableNotificationObserver);
 
     if (_projectM)
     {

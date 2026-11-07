@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Notification.h>
+#include <Poco/NotificationCenter.h>
 
 #include <cstdint>
 #include <vector>
@@ -15,6 +16,17 @@ class AudioDataAvailable : public Poco::Notification
 {
 public:
     std::string name() const override;
+
+    /**
+     * @brief The notification center audio data is posted to and observed on.
+     * Audio data arrives on the audio capture thread. Posting it to Poco's default notification center
+     * could deadlock: while posting, a thread holds the center's lock and briefly locks every observer,
+     * while the main thread holds an observer's lock during its handler (e.g. a preset switch) and then
+     * needs the center's lock to post another notification. Using a separate center only the audio
+     * observer is registered on avoids this lock-order inversion.
+     * @return The audio data notification center.
+     */
+    static Poco::NotificationCenter& Center();
 
     AudioDataAvailable() = delete;
 

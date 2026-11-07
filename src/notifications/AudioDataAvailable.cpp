@@ -11,6 +11,12 @@ std::string AudioDataAvailable::name() const
     return "AudioDataAvailableNotification";
 }
 
+Poco::NotificationCenter& AudioDataAvailable::Center()
+{
+    static Poco::NotificationCenter center;
+    return center;
+}
+
 AudioDataAvailable::AudioDataAvailable(uint32_t channels, const float* samples, const uint32_t sampleCount)
     : _channels(channels)
 {
