@@ -12,6 +12,10 @@ toasts, settings and the UI. It also includes the preset search window from upst
 - **Toasts** for Space (lock), Y (shuffle), A (aspect correction), Ctrl+C (copy path) and all favorites actions.
   Toasts are shown in the top-right corner and no longer disappear instantly.
 - **Quick Help** (Help menu) lists all keys, grouped by feature.
+- **Portable mode:** put a file named `portable.txt` next to `projectMSDL.exe` and your settings, favorites, UI layout
+  and log are stored in a `userdata` folder next to it instead of `%APPDATA%\projectM` (or the equivalent user config
+  folder on Linux/macOS). Together with `presets` and `textures` folders next to the exe, the whole folder can then be
+  copied or moved anywhere.
 
 ### Settings window (File > Settings)
 
@@ -84,6 +88,41 @@ type must appear in the preset name (not case sensitive).
 | CTRL-M    | Move the window to the next display             |
 | CTRL-I    | Switch to the next audio input device           |
 | CTRL-Q    | Quit                                            |
+
+## Building the standalone Windows version
+
+This builds a single `projectMSDL.exe` with all libraries (SDL2, Poco, FreeType, GLEW, projectM and the Visual C++
+runtime) linked in statically, so no DLLs are needed. Requires Visual Studio (2026 here, adjust the generator name for
+other versions) and [vcpkg](https://github.com/microsoft/vcpkg) (here in `C:\vcpkg`). vcpkg builds all dependencies
+from `vcpkg.json` automatically during the first configure, which can take a while.
+
+One-time setup of the build folder (the exe is installed into `C:\dev\projectm-standalone`):
+
+```shell
+cmake -G "Visual Studio 18 2026" -A x64 -S . -B cmake-build-static ^
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+  "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>" ^
+  -DCMAKE_INSTALL_PREFIX=C:/dev/projectm-standalone ^
+  -DENABLE_FLAT_PACKAGE=ON
+```
+
+Build and install after each change:
+
+```shell
+cmake --build cmake-build-static --config Release --parallel
+cmake --install cmake-build-static --config Release
+```
+
+The install folder then contains `projectMSDL.exe` and the optional, commented default `projectMSDL.properties`. For
+a portable setup, add next to the exe:
+
+- `presets\`: e.g. [Cream of the Crop](https://github.com/projectM-visualizer/presets-cream-of-the-crop)
+- `textures\`: e.g. the [Milkdrop texture pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack)
+- `portable.txt`: turns on portable mode, settings and favorites are then kept in `userdata\`
+
+If no preset/texture path is set, the `presets` and `textures` folders next to the exe are used, with or without
+`projectMSDL.properties`.
 
 
 # ProjectM SDL2 Frontend

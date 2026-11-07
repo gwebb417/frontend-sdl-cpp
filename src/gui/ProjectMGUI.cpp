@@ -2,6 +2,7 @@
 
 #include "AnonymousProFont.h"
 #include "LiberationSansFont.h"
+#include "ProjectMSDLApplication.h"
 #include "ProjectMWrapper.h"
 #include "SDLRenderingWindow.h"
 
@@ -27,8 +28,8 @@ void ProjectMGUI::initialize(Poco::Util::Application& app)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
 
-    Poco::Path userConfigurationDir = Poco::Path::configHome();
-    userConfigurationDir.makeDirectory().append("projectM/");
+    // Stored with the user settings (in the userdata folder in portable mode).
+    Poco::Path userConfigurationDir(ProjectMSDLApplication::instance().UserDataDir());
     userConfigurationDir.setFileName(app.config().getString("application.baseName") + ".UI.ini");
     _uiIniFileName = userConfigurationDir.toString();
 

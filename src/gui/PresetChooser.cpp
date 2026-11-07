@@ -38,7 +38,8 @@ bool PresetChooser::Draw()
         ImGui::OpenPopup(windowId.c_str());
     }
 
-    ImGui::SetNextWindowSize(ImVec2(1050, 0), ImGuiCond_FirstUseEver);
+    // Default size on first use. After that, ImGui remembers the size the user resized it to in projectMSDL.UI.ini.
+    ImGui::SetNextWindowSize(ImVec2(1131, 540), ImGuiCond_FirstUseEver);
     if (ImGui::BeginPopupModal(windowId.c_str(), &_isOpen, ImGuiWindowFlags_NoCollapse))
     {
         ImGui::PushStyleColor(ImGuiCol_Text, 0x80808080);

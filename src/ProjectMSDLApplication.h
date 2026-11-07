@@ -41,6 +41,20 @@ public:
      */
     const std::string& DefaultConfigurationPath() const;
 
+    /**
+     * @brief Returns the directory for per-user data (user settings, UI layout, favorites and log), with a trailing separator.
+     *
+     * Normally this is "projectM/" in the OS config dir (e.g. %APPDATA%\projectM\ on Windows). In portable mode,
+     * enabled by putting a file named "portable.txt" next to the executable, it is the "userdata/" folder next to
+     * the executable instead, so the whole installation can be moved or copied as one folder.
+     */
+    const std::string& UserDataDir() const;
+
+    /**
+     * @brief Returns true if portable mode is enabled, see UserDataDir().
+     */
+    bool Portable() const;
+
 protected:
     void initialize(Application& self) override;
 
@@ -66,4 +80,6 @@ protected:
     Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> _defaultConfiguration{
         new Poco::Util::PropertyFileConfiguration()}; //!< Standalone copy of the default configuration file, see DefaultConfiguration().
     std::string _defaultConfigurationPath; //!< Path of the loaded default configuration file.
+    std::string _userDataDir; //!< Per-user data directory, see UserDataDir().
+    bool _portable{false}; //!< True if portable mode is enabled, see UserDataDir().
 };

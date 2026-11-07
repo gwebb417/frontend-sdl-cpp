@@ -372,8 +372,7 @@ void SettingsWindow::DrawHelpTab() const
 {
     if (ImGui::BeginTabItem("Help"))
     {
-        Poco::Path userConfigurationDir = Poco::Path::configHome();
-        userConfigurationDir.makeDirectory().append("projectM/");
+        const auto& userDataDir = ProjectMSDLApplication::instance().UserDataDir();
 
         const auto& defaultConfigurationPath = ProjectMSDLApplication::instance().DefaultConfigurationPath();
 
@@ -390,7 +389,16 @@ void SettingsWindow::DrawHelpTab() const
         ImGui::TextWrapped("%s", "Changes only last until projectM is closed unless you click \"Save Settings\". The window title shows [CHANGED - NOT SAVED] while there are unsaved changes.");
         ImGui::Bullet();
         ImGui::TextWrapped("Your settings are saved to projectMSDL.properties in \"%s\".",
-                           userConfigurationDir.toString().c_str());
+                           userDataDir.c_str());
+        ImGui::Bullet();
+        if (ProjectMSDLApplication::instance().Portable())
+        {
+            ImGui::TextWrapped("%s", "Portable mode is on (portable.txt is next to the executable), so settings and favorites are kept in the \"userdata\" folder next to it. Delete portable.txt to use the normal user folder instead.");
+        }
+        else
+        {
+            ImGui::TextWrapped("%s", "To keep settings and favorites next to the executable instead (portable mode), create an empty file named portable.txt next to it.");
+        }
 
         ImGui::SeparatorText("Number settings");
         ImGui::Bullet();

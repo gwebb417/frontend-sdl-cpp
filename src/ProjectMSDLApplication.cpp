@@ -58,6 +58,16 @@ const std::string& ProjectMSDLApplication::DefaultConfigurationPath() const
     return _defaultConfigurationPath;
 }
 
+const std::string& ProjectMSDLApplication::UserDataDir() const
+{
+    return _userDataDir;
+}
+
+bool ProjectMSDLApplication::Portable() const
+{
+    return _portable;
+}
+
 void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
 {
     // Application settings are PRIO_APPLICATION, higher values have lower precedence.
@@ -65,8 +75,24 @@ void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
     config().add(_commandLineOverrides, PRIO_APPLICATION + 10);
 
     std::string configFileName = config().getString("application.baseName") + ".properties";
-    Poco::Path userConfigurationDir = Poco::Path::configHome();
-    userConfigurationDir.makeDirectory().append("projectM/");
+
+    // Portable mode: a "portable.txt" file next to the executable keeps all per-user data in a
+    // "userdata" folder next to it, instead of the OS user config dir. See UserDataDir().
+    Poco::Path userConfigurationDir;
+    Poco::Path portableMarker(config().getString("application.dir", ""));
+    portableMarker.makeDirectory().setFileName("portable.txt");
+    if (Poco::File(portableMarker).exists())
+    {
+        _portable = true;
+        userConfigurationDir = Poco::Path(config().getString("application.dir", ""));
+        userConfigurationDir.makeDirectory().pushDirectory("userdata");
+    }
+    else
+    {
+        userConfigurationDir = Poco::Path::configHome();
+        userConfigurationDir.makeDirectory().append("projectM/");
+    }
+    _userDataDir = userConfigurationDir.toString();
 
     try
     {
@@ -105,6 +131,17 @@ void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
     catch (Poco::Exception& ex)
     {
         poco_error_f1(logger(), "Failed to load default configuration file: %s", ex.displayText());
+    }
+
+    // In portable mode, also move the log file into the userdata folder. The default configuration file
+    // puts it into the OS config dir. Logging is set up by Poco's LoggingSubsystem later in
+    // Application::initialize(), so overriding the path here (the command-line layer has the highest
+    // priority) takes effect. Only do this if a file log channel is configured: a channel with only a
+    // path and no class makes the logging setup fail and the application exit.
+    if (_portable && config().has("logging.channels.file.class"))
+    {
+        _commandLineOverrides->setString("logging.channels.file.path",
+                                         Poco::Path(userConfigurationDir, config().getString("application.baseName") + ".log").toString());
     }
 
     // Try to load user's custom configuration file.

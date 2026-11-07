@@ -37,9 +37,18 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
 
         sdlWindow.GetDrawableSize(canvasWidth, canvasHeight);
 
-        auto presetPaths = GetPathListWithDefault("presetPath", app.config().getString("application.dir", ""));
+        // Built-in defaults if no path is configured anywhere (e.g. no projectMSDL.properties next to the
+        // executable): the "presets" and "textures" folders next to the executable, same as the shipped
+        // config file. Previously, presets were searched in the whole executable folder, which also picked
+        // up the favorites in a portable "userdata" folder, and no texture path was set at all.
+        auto applicationSubDir = [&app](const std::string& name) {
+            Poco::Path path(app.config().getString("application.dir", ""));
+            path.makeDirectory().pushDirectory(name);
+            return path.toString();
+        };
+        auto presetPaths = GetPathListWithDefault("presetPath", applicationSubDir("presets"));
         _presetPaths = presetPaths;
-        auto texturePaths = GetPathListWithDefault("texturePath", app.config().getString("", ""));
+        auto texturePaths = GetPathListWithDefault("texturePath", applicationSubDir("textures"));
 
         _projectM = projectm_create();
         if (!_projectM)
@@ -244,7 +253,8 @@ void ProjectMWrapper::PresetFileNameToClipboard() const
 
 std::string ProjectMWrapper::FavoritesPath() const
 {
-    auto defaultPath = Poco::Path::configHome() + "projectM" + Poco::Path::separator() + "favorites" + Poco::Path::separator();
+    // Next to the user settings by default, so favorites also move into the userdata folder in portable mode.
+    auto defaultPath = ProjectMSDLApplication::instance().UserDataDir() + "favorites" + Poco::Path::separator();
     return _projectMConfigView->getString("favoritesPath", defaultPath);
 }
 
