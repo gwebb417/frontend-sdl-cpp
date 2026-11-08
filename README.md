@@ -32,7 +32,11 @@ they're missing.
 - **Portable mode:** put a file named `portable.txt` next to `projectMSDL.exe` and your settings, favorites, UI layout
   and log are stored in a `userdata` folder next to it instead of `%APPDATA%\projectM` (or the equivalent user config
   folder on Linux/macOS). Together with `presets` and `textures` folders next to the exe, the whole folder can then be
-  copied or moved anywhere.
+  copied or moved anywhere. If the folder can't be written to (e.g. inside `C:\Program Files`), a message says that
+  settings and favorites can't be saved.
+- **Linux records what's playing:** if no audio device is set, the "Monitor of ..." device of the current output is
+  used instead of the microphone, so projectM visualizes the music the PC plays. Pick another device in the settings
+  or with Ctrl+I.
 
 ### Settings window (File > Settings)
 
@@ -63,6 +67,14 @@ they're missing.
   This adds no latency.
 - The app could freeze when switching presets (mostly on Linux, e.g. pressing R): the audio thread and the preset
   switch could each wait for a lock the other held. Audio data now uses its own notification channel.
+- Broken presets (e.g. "Could not compile per-pixel code") were skipped silently, but the app still treated them as
+  the current preset: the title showed the wrong name, S saved the broken preset instead of the one on screen, and
+  favorites mode seemed stuck. Only presets that actually loaded count now, and a message is shown if none could be
+  loaded.
+- Linux: the app could close when switching in or out of fullscreen (X11 error "BadMatch" from `X_SetInputFocus`,
+  e.g. on GNOME). Such harmless X11 errors are now logged instead.
+- Windows: no presets were found if the folder name contained characters like ä, ö or ü.
+- Preset paths no longer contain a double slash (e.g. in the path copied with Ctrl+C).
 
 ## Keybinds
 
