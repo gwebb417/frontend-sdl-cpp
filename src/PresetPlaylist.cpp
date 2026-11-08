@@ -6,6 +6,7 @@
 
 #include "PresetPlaylist.h"
 
+#include "notifications/DisplayToast.h"
 #include "notifications/PlaylistChanged.h"
 #include "notifications/UpdateWindowTitle.h"
 
@@ -37,11 +38,13 @@ PresetPlaylist::PresetPlaylist()
     }
 
     projectm_playlist_set_preset_switched_event_callback(_projectMPlaylist, &PresetPlaylist::PresetSwitchedEvent, this);
+    projectm_playlist_set_preset_switch_failed_event_callback(_projectMPlaylist, &PresetPlaylist::PresetSwitchFailedEvent, this);
 }
 PresetPlaylist::~PresetPlaylist()
 {
     poco_assert(_projectMPlaylist);
     projectm_playlist_set_preset_switched_event_callback(_projectMPlaylist, nullptr, nullptr);
+    projectm_playlist_set_preset_switch_failed_event_callback(_projectMPlaylist, nullptr, nullptr);
     projectm_playlist_destroy(_projectMPlaylist);
     _projectMPlaylist = nullptr;
 }
@@ -68,10 +71,10 @@ void PresetPlaylist::CurrentIndex(ItemList::size_type index, bool hardcut)
         throw std::out_of_range("Playlist index out of range");
     }
 
-    _currentIndex = index;
-
+    // _currentIndex is updated by PresetSwitchedEvent() once the preset has actually loaded.
     poco_assert(_projectMPlaylist);
-    projectm_playlist_set_position(_projectMPlaylist, _currentIndex, hardcut);
+    BeginPresetSwitch();
+    projectm_playlist_set_position(_projectMPlaylist, static_cast<uint32_t>(index), hardcut);
 }
 
 void PresetPlaylist::ShuffleEnabled(bool enabled)
@@ -91,6 +94,7 @@ void PresetPlaylist::Next(bool hardCut)
 {
     poco_assert(_projectMPlaylist);
     projectm_playlist_set_shuffle(_projectMPlaylist, false);
+    BeginPresetSwitch();
     projectm_playlist_play_next(_projectMPlaylist, hardCut);
     projectm_playlist_set_shuffle(_projectMPlaylist, _shuffle);
 }
@@ -99,6 +103,7 @@ void PresetPlaylist::Previous(bool hardCut)
 {
     poco_assert(_projectMPlaylist);
     projectm_playlist_set_shuffle(_projectMPlaylist, false);
+    BeginPresetSwitch();
     projectm_playlist_play_previous(_projectMPlaylist, hardCut);
     projectm_playlist_set_shuffle(_projectMPlaylist, _shuffle);
 }
@@ -106,6 +111,7 @@ void PresetPlaylist::Previous(bool hardCut)
 void PresetPlaylist::LastInHistory(bool hardCut)
 {
     poco_assert(_projectMPlaylist);
+    BeginPresetSwitch();
     projectm_playlist_play_last(_projectMPlaylist, hardCut);
 }
 
@@ -113,6 +119,7 @@ void PresetPlaylist::Random(bool hardCut)
 {
     poco_assert(_projectMPlaylist);
     projectm_playlist_set_shuffle(_projectMPlaylist, true);
+    BeginPresetSwitch();
     projectm_playlist_play_next(_projectMPlaylist, hardCut);
     projectm_playlist_set_shuffle(_projectMPlaylist, _shuffle);
 }
@@ -382,13 +389,37 @@ void PresetPlaylist::PresetSwitchedEvent(bool /* isHardCut */, unsigned int inde
 {
     auto that = static_cast<PresetPlaylist*>(context);
 
-    if (!that->Empty())
+    // Only the first report after BeginPresetSwitch() is the preset that loaded, see BeginPresetSwitch().
+    if (that->_presetSwitchResolved)
+    {
+        if (index < that->_items.size())
+        {
+            poco_warning_f1(that->_logger, "Skipped preset that failed to load: %s", that->_items.at(index).Path());
+        }
+        return;
+    }
+    that->_presetSwitchResolved = true;
+
+    if (index < that->_items.size())
     {
         that->_currentIndex = index;
         poco_information_f1(that->_logger, "Displaying preset: %s", that->CurrentItem().PresetName());
     }
 
     Poco::NotificationCenter::defaultCenter().postNotification(new Notification::UpdateWindowTitle);
+}
+
+void PresetPlaylist::PresetSwitchFailedEvent(const char* presetFilename, const char* message, void* context)
+{
+    auto that = static_cast<PresetPlaylist*>(context);
+
+    // All retries failed: the previous preset is still displayed, so keep it as the current item.
+    that->_presetSwitchResolved = true;
+
+    const std::string fileName(presetFilename ? presetFilename : "");
+    poco_warning_f2(that->_logger, "Could not load preset %s: %s", fileName, std::string(message ? message : ""));
+    Poco::NotificationCenter::defaultCenter().postNotification(
+        new Notification::DisplayToast("Could not load preset: " + Poco::Path(fileName).getBaseName()));
 }
 
 void PresetPlaylist::SendPlaylistChangedNotification() const

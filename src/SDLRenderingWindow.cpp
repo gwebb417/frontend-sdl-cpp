@@ -16,6 +16,66 @@
 
 #include <algorithm>
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <dlfcn.h>
+
+namespace {
+
+// Minimal copy of Xlib's XErrorEvent, so the app doesn't need the X11 headers or link to libX11.
+struct XErrorEventFields
+{
+    int type;
+    void* display;
+    unsigned long resourceId;
+    unsigned long serial;
+    unsigned char errorCode;
+    unsigned char requestCode;
+    unsigned char minorCode;
+};
+
+using XErrorHandlerFunc = int (*)(void*, XErrorEventFields*);
+using XSetErrorHandlerFunc = XErrorHandlerFunc (*)(XErrorHandlerFunc);
+
+int NonFatalXErrorHandler(void* /* display */, XErrorEventFields* event)
+{
+    poco_warning_f3(Poco::Logger::get("SDLRenderingWindow"),
+                    "Ignored X11 error %?d (request %?d.%?d).",
+                    static_cast<int>(event->errorCode), static_cast<int>(event->requestCode), static_cast<int>(event->minorCode));
+    return 0;
+}
+
+/**
+ * Xlib's default error handler ends the whole process on any X11 error. SDL2 can trigger harmless ones,
+ * e.g. a BadMatch from XSetInputFocus when it re-focuses the window while the window manager is still
+ * switching it in or out of fullscreen (seen on GNOME/XWayland). Log those errors instead of crashing.
+ * SDL loads libX11 dynamically, so the handler is set in the same, already loaded library.
+ */
+void InstallNonFatalXErrorHandler()
+{
+    const char* driver = SDL_GetCurrentVideoDriver();
+    if (driver == nullptr || std::string(driver) != "x11")
+    {
+        return;
+    }
+
+    void* libX11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_NOLOAD);
+    if (libX11 == nullptr)
+    {
+        return;
+    }
+
+    auto setErrorHandler = reinterpret_cast<XSetErrorHandlerFunc>(dlsym(libX11, "XSetErrorHandler"));
+    if (setErrorHandler != nullptr)
+    {
+        setErrorHandler(&NonFatalXErrorHandler);
+    }
+
+    dlclose(libX11); // Only drops the reference taken above, SDL keeps the library loaded.
+}
+
+} // namespace
+#endif
+
 const char* SDLRenderingWindow::name() const
 {
     return "SDL2 Rendering Window";
@@ -338,6 +398,10 @@ void SDLRenderingWindow::NextDisplay()
 void SDLRenderingWindow::CreateSDLWindow()
 {
     SDL_InitSubSystem(SDL_INIT_VIDEO);
+
+#if defined(__linux__) && !defined(__ANDROID__)
+    InstallNonFatalXErrorHandler();
+#endif
 
     // Default size matches the shipped projectMSDL.properties and the settings window (was 800x600).
     int width{_config->getInt("width", 1920)};

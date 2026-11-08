@@ -216,6 +216,11 @@ void ProjectMWrapper::RenderFrame()
         }
     }
 
+    // projectM may switch presets automatically (preset duration, hard cuts) while rendering.
+    if (_playlist)
+    {
+        _playlist->BeginPresetSwitch();
+    }
     projectm_opengl_render_frame(_projectM);
 }
 

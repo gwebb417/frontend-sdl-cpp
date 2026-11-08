@@ -147,6 +147,21 @@ public:
      * @throws std::out_of_range Thrown if the index is outside the valid range.
      * @return A reference to the current playlist item.
      */
+    /**
+     * @brief Must be called before anything that can switch presets, including rendering a frame
+     *        (projectM switches presets automatically from inside its render call).
+     *
+     * If a preset fails to load (e.g. broken per-pixel code), libprojectM's playlist retries with the next
+     * preset from inside the failure handler, and then reports every attempt as "switched", innermost
+     * first. So the first report after this call is the preset that actually loaded, and the later ones
+     * are the presets that failed. If all retries failed, PresetSwitchFailedEvent() is called first and
+     * none of the reports is used, so the current item stays the preset that is still displayed.
+     */
+    void BeginPresetSwitch()
+    {
+        _presetSwitchResolved = false;
+    }
+
     [[nodiscard]] const Item& CurrentItem() const
     {
         if (!_items.empty())
@@ -308,6 +323,14 @@ private:
     static void PresetSwitchedEvent(bool isHardCut, unsigned int index, void* context);
 
     /**
+     * @brief projectM callback. Called when a preset switch failed and all retries failed too.
+     * @param presetFilename The preset that failed to load last.
+     * @param message The error message.
+     * @param context Callback context, e.g. "this" pointer.
+     */
+    static void PresetSwitchFailedEvent(const char* presetFilename, const char* message, void* context);
+
+    /**
      * Sends a notification that the playlist has changed.
      */
     void SendPlaylistChangedNotification() const;
@@ -318,6 +341,7 @@ private:
 
     bool _shuffle{false}; //!< Shuffle enabled
     bool _isBatchEditing{false}; //!< Flag determining if the playlist is being batch-edited.
+    bool _presetSwitchResolved{false}; //!< True once the current preset switch (incl. retries) has a result, see BeginPresetSwitch().
 
     Poco::Logger& _logger{Poco::Logger::get("PresetPlaylist")}; //!< The class logger.
 };
