@@ -128,4 +128,9 @@ if (MSVC)
             PROPERTIES
             VS_DPI_AWARE "PerMonitor"
             )
+    # UTF-8 process code page, so paths with non-ASCII characters work in libprojectM.
+    target_sources(projectMSDL
+            PRIVATE
+            projectMSDL.manifest
+            )
 endif ()

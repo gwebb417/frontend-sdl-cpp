@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Makes UTF-8 the process code page (Windows 10 1903+). The app passes UTF-8 paths (from Poco and SDL) to
+  libprojectM, which opens preset folders and files with narrow-string APIs. Without this, Windows reads those
+  paths in the legacy ANSI code page, so presets in folders with non-ASCII names (e.g. "äöü") were not found.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

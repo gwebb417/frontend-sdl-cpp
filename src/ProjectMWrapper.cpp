@@ -609,20 +609,30 @@ std::vector<std::string> ProjectMWrapper::GetPathListWithDefault(const std::stri
     using Poco::Util::AbstractConfiguration;
 
     std::vector<std::string> pathList;
-    auto defaultPresetPath = _projectMConfigView->getString(baseKey, defaultPath);
-    if (!defaultPresetPath.empty())
-    {
-        pathList.push_back(defaultPresetPath);
-    }
+
+    // Normalizes e.g. "${application.dir}/presets", which expands to ".../folder//presets" because
+    // application.dir already ends with a separator, and uses the native separators.
+    auto addPath = [&pathList](const std::string& path) {
+        if (path.empty())
+        {
+            return;
+        }
+        try
+        {
+            pathList.push_back(Poco::Path(path).makeDirectory().toString());
+        }
+        catch (const Poco::Exception&)
+        {
+            pathList.push_back(path);
+        }
+    };
+
+    addPath(_projectMConfigView->getString(baseKey, defaultPath));
     AbstractConfiguration::Keys subKeys;
     _projectMConfigView->keys(baseKey, subKeys);
     for (const auto& key : subKeys)
     {
-        auto path = _projectMConfigView->getString(baseKey + "." + key, "");
-        if (!path.empty())
-        {
-            pathList.push_back(std::move(path));
-        }
+        addPath(_projectMConfigView->getString(baseKey + "." + key, ""));
     }
     return pathList;
 }
