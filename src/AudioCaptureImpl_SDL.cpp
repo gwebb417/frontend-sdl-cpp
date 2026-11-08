@@ -50,6 +50,44 @@ std::map<int, std::string> AudioCaptureImpl::AudioDeviceList()
     return deviceList;
 }
 
+int AudioCaptureImpl::DefaultAudioDeviceIndex(const std::map<int, std::string>& deviceList)
+{
+    static const std::string monitorPrefix = "Monitor of ";
+
+    // Prefer the monitor of the default output device. SDL_GetDefaultAudioInfo() exists since SDL 2.24.
+    // The release build is compiled against an older SDL, so look it up in the SDL library actually running.
+    using GetDefaultAudioInfoFunc = int (*)(char**, SDL_AudioSpec*, int);
+    auto getDefaultAudioInfo = reinterpret_cast<GetDefaultAudioInfoFunc>(SDL_LoadFunction(nullptr, "SDL_GetDefaultAudioInfo"));
+    if (getDefaultAudioInfo != nullptr)
+    {
+        char* outputName{nullptr};
+        SDL_AudioSpec spec{};
+        if (getDefaultAudioInfo(&outputName, &spec, 0) == 0 && outputName != nullptr)
+        {
+            const std::string wantedName = monitorPrefix + outputName;
+            SDL_free(outputName);
+
+            for (const auto& device : deviceList)
+            {
+                if (device.second == wantedName)
+                {
+                    return device.first;
+                }
+            }
+        }
+    }
+
+    for (const auto& device : deviceList)
+    {
+        if (device.first >= 0 && device.second.compare(0, monitorPrefix.size(), monitorPrefix) == 0)
+        {
+            return device.first;
+        }
+    }
+
+    return -1;
+}
+
 void AudioCaptureImpl::StartRecording(int audioDeviceIndex)
 {
     _currentAudioDeviceIndex = audioDeviceIndex;

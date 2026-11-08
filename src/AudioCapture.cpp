@@ -116,6 +116,17 @@ int AudioCapture::GetInitialAudioDeviceIndex(const AudioDeviceMap& deviceList)
 {
     int audioDeviceIndex{ -1 };
 
+#ifdef AUDIO_IMPL_HAS_DEFAULT_DEVICE_INDEX
+    // No device chosen: let the implementation pick, e.g. the output monitor instead of the microphone on Linux.
+    if (!_config->has("device") || _config->getString("device", "").empty())
+    {
+        audioDeviceIndex = _impl->DefaultAudioDeviceIndex(deviceList);
+        poco_information_f2(_logger, R"(Recording audio from device "%s" (ID %?d).)",
+                            deviceList.at(audioDeviceIndex), audioDeviceIndex);
+        return audioDeviceIndex;
+    }
+#endif
+
     // Check if configured device is a number or string
     try
     {

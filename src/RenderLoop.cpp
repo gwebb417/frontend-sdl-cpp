@@ -32,6 +32,12 @@ void RenderLoop::Run()
 
     _projectMWrapper.DisplayInitialPreset();
 
+    if (!ProjectMSDLApplication::instance().UserDataWritable())
+    {
+        notificationCenter.postNotification(new Notification::DisplayToast(
+            "Settings and favorites can't be saved: this folder is read-only. Move projectM to a folder you can write to."));
+    }
+
     while (!_wantsToQuit)
     {
         limiter.TargetFPS(_projectMWrapper.TargetFPS());

@@ -55,6 +55,12 @@ public:
      */
     bool Portable() const;
 
+    /**
+     * @brief Returns false if settings and favorites can't be saved, e.g. because the portable app was
+     *        unpacked into a read-only folder. The app still runs, but changes are lost on exit.
+     */
+    bool UserDataWritable() const;
+
 protected:
     void initialize(Application& self) override;
 
@@ -82,4 +88,5 @@ protected:
     std::string _defaultConfigurationPath; //!< Path of the loaded default configuration file.
     std::string _userDataDir; //!< Per-user data directory, see UserDataDir().
     bool _portable{false}; //!< True if portable mode is enabled, see UserDataDir().
+    bool _userDataWritable{true}; //!< False if the user data directory can't be written, see UserDataWritable().
 };

@@ -4,7 +4,11 @@
 
 #include <Poco/Logger.h>
 
+#include <map>
 #include <string>
+
+//! This implementation provides DefaultAudioDeviceIndex(), see AudioCapture::GetInitialAudioDeviceIndex().
+#define AUDIO_IMPL_HAS_DEFAULT_DEVICE_INDEX 1
 
 class projectm;
 
@@ -25,6 +29,16 @@ public:
      * @return A vector of available audio device IDs and names.
      */
     std::map<int, std::string> AudioDeviceList();
+
+    /**
+     * @brief Returns the device to record from if none is configured.
+     *
+     * SDL's default recording device is the microphone, but projectM should visualize what the PC is playing.
+     * With PulseAudio/PipeWire, that's the "Monitor of ..." device of the current output, so that one is
+     * preferred, falling back to the first monitor device. Returns -1 (SDL default) if there is none.
+     * @param deviceList The list returned by AudioDeviceList().
+     */
+    int DefaultAudioDeviceIndex(const std::map<int, std::string>& deviceList);
 
     /**
      * @brief Starts audio capturing with the first available device.

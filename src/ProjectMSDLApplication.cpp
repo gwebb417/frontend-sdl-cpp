@@ -68,6 +68,11 @@ bool ProjectMSDLApplication::Portable() const
     return _portable;
 }
 
+bool ProjectMSDLApplication::UserDataWritable() const
+{
+    return _userDataWritable;
+}
+
 void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
 {
     // Application settings are PRIO_APPLICATION, higher values have lower precedence.
@@ -159,10 +164,19 @@ void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
 
         // Store the configuration file path
         _commandLineOverrides->setString("app.UserConfigurationFile", userConfigurationFile.toString());
+
+        // The files may exist but be read-only, e.g. if the whole folder was made read-only.
+        _userDataWritable = Poco::File(userConfigurationFile).canWrite() && Poco::File(userConfigurationDir).canWrite();
     }
     catch (Poco::Exception& ex)
     {
+        _userDataWritable = false;
         poco_error_f1(logger(), "Failed to load/create user configuration file: %s", ex.displayText());
+    }
+
+    if (!_userDataWritable)
+    {
+        poco_warning_f1(logger(), "Settings and favorites can't be saved, %s is not writable.", userConfigurationDir.toString());
     }
 
     Application::initialize(self);
