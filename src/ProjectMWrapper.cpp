@@ -7,13 +7,17 @@
 
 #include <Poco/Delegate.h>
 #include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/NotificationCenter.h>
+#include <Poco/Path.h>
+#include <Poco/RecursiveDirectoryIterator.h>
+#include <Poco/String.h>
 
 #include <SDL2/SDL_opengl.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 const char* ProjectMWrapper::name() const
@@ -48,6 +52,10 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
         };
         auto presetPaths = GetPathListWithDefault("presetPath", applicationSubDir("presets"));
         _presetPaths = presetPaths;
+        for (const auto& presetPath : presetPaths)
+        {
+            poco_information_f1(_logger, "Preset folder: %s", presetPath);
+        }
         auto texturePaths = GetPathListWithDefault("texturePath", applicationSubDir("textures"));
 
         _projectM = projectm_create();
@@ -74,11 +82,11 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
 
         // Preset display settings
         projectm_set_preset_duration(_projectM, _projectMConfigView->getDouble("displayDuration", 30.0));
-        projectm_set_soft_cut_duration(_projectM, _projectMConfigView->getDouble("transitionDuration", 3.0));
+        projectm_set_soft_cut_duration(_projectM, TransitionDuration());
         projectm_set_hard_cut_enabled(_projectM, _projectMConfigView->getBool("hardCutsEnabled", false));
         projectm_set_hard_cut_duration(_projectM, _projectMConfigView->getDouble("hardCutDuration", 20.0));
         projectm_set_hard_cut_sensitivity(_projectM, static_cast<float>(_projectMConfigView->getDouble("hardCutSensitivity", 1.0)));
-        projectm_set_beat_sensitivity(_projectM, static_cast<float>(_projectMConfigView->getDouble("beatSensitivity", 1.0)));
+        ApplyBeatSensitivity();
 
         if (!texturePaths.empty())
         {
@@ -96,23 +104,7 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
         _playlist = std::make_unique<PresetPlaylist>();
         _playlist->ShuffleEnabled(_projectMConfigView->getBool("shuffleEnabled", true));
 
-        _playlist->BeginBatchEdit();
-        for (const auto& presetPath : presetPaths)
-        {
-            Poco::File file(presetPath);
-            if (file.exists() && file.isFile())
-            {
-                _playlist->AddItem(PresetPlaylist::Item(presetPath), false);
-            }
-            else
-            {
-                // Symbolic links also fall under this. Without complex resolving, we can't
-                // be sure what the link exactly points to, especially if a trailing slash is missing.
-                _playlist->AddPath(presetPath, true, false);
-            }
-        }
-        _playlist->Sort(PresetPlaylist::SortPredicate::PresetName, PresetPlaylist::SortOrder::Ascending);
-        _playlist->EndBatchEdit();
+        FillAllPresets();
 
         _playlist->Connect(_projectM);
     }
@@ -197,20 +189,9 @@ void ProjectMWrapper::RenderFrame()
         {
             poco_assert(_audioStagingBuffer.size() % _audioChannels == 0);
 
-            // libprojectM 4.x stores the beat sensitivity (projectm_set_beat_sensitivity), but never uses it,
-            // so the setting had no effect. Apply it here instead by scaling the samples, which scales the
-            // bass/mid/treb values presets react to (and the waveforms drawn from the audio): 0 = no reaction
-            // to the music, 1 = normal, 2 = twice as strong. This happens in the same frame the samples are
-            // passed to projectM, so it adds no latency. At the default of 1.0 the samples are passed unchanged.
-            auto beatSensitivity = projectm_get_beat_sensitivity(_projectM);
-            if (beatSensitivity != 1.0f)
-            {
-                for (auto& sample : _audioStagingBuffer)
-                {
-                    sample *= beatSensitivity;
-                }
-            }
-
+            // Beat sensitivity is applied inside libprojectM (patched, see vcpkg-overlay/ports/projectm).
+            // v1.1 scaled these samples instead, but libprojectM compares the beat values with their average
+            // over the last few seconds, so the effect faded after 5-10 seconds.
             projectm_pcm_add_float(_projectM, _audioStagingBuffer.data(), _audioStagingBuffer.size() / _audioChannels, static_cast<projectm_channels>(_audioChannels));
             _audioStagingBuffer.clear();
         }
@@ -242,11 +223,38 @@ void ProjectMWrapper::DisplayInitialPreset()
     }
 }
 
-void ProjectMWrapper::ChangeBeatSensitivity(float value) const
+bool ProjectMWrapper::BeatAveragingEnabled() const
 {
-    projectm_set_beat_sensitivity(_projectM, projectm_get_beat_sensitivity(_projectM) + value);
+    return _projectMConfigView->getBool("beatAveraging", false);
+}
+
+float ProjectMWrapper::BeatSensitivity() const
+{
+    return std::clamp(static_cast<float>(_projectMConfigView->getDouble("beatSensitivity", 1.0)), 0.0f, 2.0f);
+}
+
+void ProjectMWrapper::ApplyBeatSensitivity() const
+{
+    // With beat averaging on, presets react the standard Milkdrop way: the beat values are only compared
+    // with their recent average (sensitivity 1), and the Beat Sensitivity setting isn't used.
+    projectm_set_beat_sensitivity(_projectM, BeatAveragingEnabled() ? 1.0f : BeatSensitivity());
+}
+
+void ProjectMWrapper::ChangeBeatSensitivity(float value)
+{
+    if (BeatAveragingEnabled())
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new Notification::DisplayToast("Beat Sensitivity is off while Beat Averaging is on"));
+        return;
+    }
+
+    // Stored in the settings like a change in the settings window, so both always show the same value.
+    // The configuration change applies it (see OnConfigurationPropertyChanged()).
+    float newValue = std::clamp(std::round((BeatSensitivity() + value) * 100.0f) / 100.0f, 0.0f, 2.0f);
+    _userConfig->setDouble("projectM.beatSensitivity", newValue);
     Poco::NotificationCenter::defaultCenter().postNotification(
-        new Notification::DisplayToast(Poco::format("Beat Sensitivity: %.2hf", projectm_get_beat_sensitivity(_projectM))));
+        new Notification::DisplayToast(Poco::format("Beat Sensitivity: %.2hf", newValue)));
 }
 
 std::string ProjectMWrapper::ProjectMBuildVersion()
@@ -278,7 +286,127 @@ std::string ProjectMWrapper::FavoritesPath() const
     return _projectMConfigView->getString("favoritesPath", defaultPath);
 }
 
-PresetPlaylist::ItemList::size_type ProjectMWrapper::FillPlaylist(const std::vector<std::string>& paths)
+namespace {
+
+/**
+ * @brief Path with '/' separators, for comparing paths from different sources.
+ */
+std::string WithForwardSlashes(std::string path)
+{
+    std::replace(path.begin(), path.end(), '\\', '/');
+    return path;
+}
+
+/**
+ * @brief Key for comparing paths: '/' separators, and case-insensitive on Windows (like its file system).
+ */
+std::string PathKey(const std::string& path)
+{
+#ifdef _WIN32
+    return Poco::toLower(WithForwardSlashes(path));
+#else
+    return WithForwardSlashes(path);
+#endif
+}
+
+} // namespace
+
+double ProjectMWrapper::TransitionDuration() const
+{
+    // libprojectM 4.1 divides by the transition duration to check if a transition has ended. With exactly 0,
+    // that's 0/0, so the transition never ends and projectM never switches presets automatically again.
+    // 0.05 s (about three frames) still looks like an instant switch.
+    return std::max(_projectMConfigView->getDouble("transitionDuration", 3.0), 0.05);
+}
+
+std::string ProjectMWrapper::DisabledPath() const
+{
+    auto defaultPath = ProjectMSDLApplication::instance().UserDataDir() + "disabled" + Poco::Path::separator();
+    return _projectMConfigView->getString("disabledPath", defaultPath);
+}
+
+std::string ProjectMWrapper::RelativePresetPath(const std::string& presetFile) const
+{
+    const auto file = WithForwardSlashes(presetFile);
+    const auto fileKey = PathKey(presetFile);
+
+    for (const auto& root : _presetPaths)
+    {
+        auto rootKey = PathKey(root);
+        if (rootKey.empty())
+        {
+            continue;
+        }
+        if (rootKey.back() != '/')
+        {
+            rootKey += '/';
+        }
+
+        if (fileKey.size() > rootKey.size() && fileKey.compare(0, rootKey.size(), rootKey) == 0)
+        {
+            return file.substr(rootKey.size());
+        }
+    }
+
+    return {};
+}
+
+void ProjectMWrapper::RemoveDisabledPresets()
+{
+    std::set<std::string> disabledKeys;
+
+    try
+    {
+        Poco::File disabledDir(DisabledPath());
+        if (!disabledDir.exists() || !disabledDir.isDirectory())
+        {
+            return;
+        }
+
+        const auto disabledRoot = PathKey(Poco::Path(DisabledPath()).makeDirectory().toString());
+        Poco::SimpleRecursiveDirectoryIterator end;
+        for (Poco::SimpleRecursiveDirectoryIterator it(disabledDir.path()); it != end; ++it)
+        {
+            if (it->isFile())
+            {
+                auto key = PathKey(it->path());
+                if (key.compare(0, disabledRoot.size(), disabledRoot) == 0)
+                {
+                    disabledKeys.insert(key.substr(disabledRoot.size()));
+                }
+            }
+        }
+    }
+    catch (const Poco::Exception& ex)
+    {
+        poco_warning_f1(_logger, "Could not read the disabled presets folder: %s", ex.displayText());
+        return;
+    }
+
+    if (disabledKeys.empty())
+    {
+        return;
+    }
+
+    size_t removed{0};
+    const auto& items = _playlist->Items();
+    for (auto index = items.size(); index > 0; index--)
+    {
+        auto relativePath = RelativePresetPath(items[index - 1].Path());
+        if (!relativePath.empty() && disabledKeys.count(PathKey(relativePath)) > 0)
+        {
+            _playlist->RemoveItem(index - 1);
+            removed++;
+        }
+    }
+
+    if (removed > 0)
+    {
+        poco_information_f1(_logger, "Disabled presets left out: %?d", removed);
+    }
+}
+
+PresetPlaylist::ItemList::size_type ProjectMWrapper::FillPlaylist(const std::vector<std::string>& paths, bool skipDisabled)
 {
     _playlist->BeginBatchEdit();
     _playlist->Clear();
@@ -291,13 +419,29 @@ PresetPlaylist::ItemList::size_type ProjectMWrapper::FillPlaylist(const std::vec
         }
         else
         {
+            // Symbolic links also fall under this. Without complex resolving, we can't
+            // be sure what the link exactly points to, especially if a trailing slash is missing.
             _playlist->AddPath(path, true, false);
         }
+    }
+    if (skipDisabled)
+    {
+        RemoveDisabledPresets();
     }
     _playlist->Sort(PresetPlaylist::SortPredicate::PresetName, PresetPlaylist::SortOrder::Ascending);
     _playlist->EndBatchEdit();
 
     return _playlist->Size();
+}
+
+PresetPlaylist::ItemList::size_type ProjectMWrapper::FillAllPresets()
+{
+    return FillPlaylist(_presetPaths, true);
+}
+
+PresetPlaylist::ItemList::size_type ProjectMWrapper::FillFavorites()
+{
+    return FillPlaylist({FavoritesPath()}, false);
 }
 
 void ProjectMWrapper::PlayFromStart()
@@ -358,7 +502,7 @@ void ProjectMWrapper::SaveCurrentPresetToFavorites()
         }
 
         Poco::File(source).copyTo(target.toString());
-        PushUndo({true, source.getFileName(), ""});
+        PushUndo({FavoriteChange::Kind::SavedFavorite, source.getFileName(), "", "", ""});
         poco_information_f1(_logger, "Saved favorite: %s", presetFile);
         Poco::NotificationCenter::defaultCenter().postNotification(
             new Notification::DisplayToast("Saved to favorites: " + source.getFileName()));
@@ -402,7 +546,7 @@ void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
             std::ifstream in(favoriteFile.path(), std::ios::binary);
             std::ostringstream buffer;
             buffer << in.rdbuf();
-            PushUndo({false, fileName, buffer.str()});
+            PushUndo({FavoriteChange::Kind::RemovedFavorite, fileName, buffer.str(), "", ""});
         }
 
         favoriteFile.remove();
@@ -418,13 +562,13 @@ void ProjectMWrapper::RemoveCurrentPresetFromFavorites()
 
     std::string message = "Removed from favorites: " + fileName;
 
-    if (_favoritesOnly)
+    if (_mode == PlaylistMode::Favorites)
     {
         // Reload the favorites list so the removed preset leaves the rotation.
-        if (FillPlaylist({FavoritesPath()}) == 0)
+        if (FillFavorites() == 0)
         {
-            FillPlaylist(_presetPaths);
-            _favoritesOnly = false;
+            FillAllPresets();
+            _mode = PlaylistMode::AllPresets;
             message += " (no favorites left, playing all presets)";
         }
 
@@ -455,6 +599,20 @@ void ProjectMWrapper::UndoFavoriteChange()
     auto change = std::move(_undoStack.back());
     _undoStack.pop_back();
 
+    if (change.kind == FavoriteChange::Kind::DisabledPreset)
+    {
+        UndoDisable(change);
+        return;
+    }
+
+    if (change.kind == FavoriteChange::Kind::ReenabledPreset)
+    {
+        UndoReenable(change);
+        return;
+    }
+
+    const bool wasSave = change.kind == FavoriteChange::Kind::SavedFavorite;
+
     try
     {
         Poco::File(FavoritesPath()).createDirectories();
@@ -462,7 +620,7 @@ void ProjectMWrapper::UndoFavoriteChange()
         Poco::Path target(FavoritesPath());
         target.setFileName(change.fileName);
 
-        if (change.wasSave)
+        if (wasSave)
         {
             // Undo a save: delete the copy again.
             Poco::File savedFile(target);
@@ -494,19 +652,19 @@ void ProjectMWrapper::UndoFavoriteChange()
 
     poco_information_f1(_logger, "Undid favorites change: %s", change.fileName);
 
-    std::string message = (change.wasSave ? "Undid save: " : "Restored favorite: ") + change.fileName;
+    std::string message = (wasSave ? "Undid save: " : "Restored favorite: ") + change.fileName;
 
     // In favorites-only mode, reload the list so it matches the folder again.
-    if (_favoritesOnly)
+    if (_mode == PlaylistMode::Favorites)
     {
-        if (FillPlaylist({FavoritesPath()}) == 0)
+        if (FillFavorites() == 0)
         {
-            FillPlaylist(_presetPaths);
-            _favoritesOnly = false;
+            FillAllPresets();
+            _mode = PlaylistMode::AllPresets;
             message += " (no favorites left, playing all presets)";
         }
 
-        if (change.wasSave)
+        if (wasSave)
         {
             // The undone preset may be the one playing, so move on to another.
             PlayFromStart();
@@ -516,27 +674,370 @@ void ProjectMWrapper::UndoFavoriteChange()
     Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(message));
 }
 
+void ProjectMWrapper::DeleteKeyPressed()
+{
+    switch (_mode)
+    {
+        case PlaylistMode::Favorites:
+            RemoveCurrentPresetFromFavorites();
+            break;
+
+        case PlaylistMode::Disabled:
+            ReenableCurrentPreset();
+            break;
+
+        case PlaylistMode::AllPresets:
+            DisableCurrentPreset();
+            break;
+    }
+}
+
+bool ProjectMWrapper::MovePresetFile(const std::string& from, const std::string& to)
+{
+    try
+    {
+        Poco::File(Poco::Path(to).parent()).createDirectories();
+
+        // Copy and delete instead of renaming, so it also works if the folders are on different drives.
+        Poco::File(from).copyTo(to);
+        try
+        {
+            Poco::File(from).remove();
+        }
+        catch (...)
+        {
+            Poco::File(to).remove();
+            throw;
+        }
+    }
+    catch (const Poco::Exception& ex)
+    {
+        poco_error_f3(_logger, "Could not move preset %s to %s: %s", from, to, ex.displayText());
+        return false;
+    }
+    return true;
+}
+
+bool ProjectMWrapper::RemoveFromPlaylistAndContinue(const std::string& presetFile)
+{
+    auto index = _playlist->CurrentIndex();
+    const auto& items = _playlist->Items();
+    if (index >= items.size() || PathKey(items[index].Path()) != PathKey(presetFile))
+    {
+        index = items.size();
+        for (size_t i = 0; i < items.size(); i++)
+        {
+            if (PathKey(items[i].Path()) == PathKey(presetFile))
+            {
+                index = i;
+                break;
+            }
+        }
+    }
+    if (index < items.size())
+    {
+        _playlist->RemoveItem(index);
+    }
+
+    if (_playlist->Empty())
+    {
+        return false;
+    }
+
+    if (_playlist->ShuffleEnabled())
+    {
+        _playlist->Random(true);
+    }
+    else
+    {
+        // The next preset has moved up into the removed preset's place.
+        _playlist->CurrentIndex(std::min<size_t>(index, _playlist->Size() - 1), true);
+    }
+    return true;
+}
+
+void ProjectMWrapper::PlayPresetFile(const std::string& presetFile)
+{
+    const auto& items = _playlist->Items();
+    for (size_t i = 0; i < items.size(); i++)
+    {
+        if (PathKey(items[i].Path()) == PathKey(presetFile))
+        {
+            _playlist->CurrentIndex(i, true);
+            return;
+        }
+    }
+    PlayFromStart();
+}
+
+PresetPlaylist::ItemList::size_type ProjectMWrapper::FillDisabled()
+{
+    return FillPlaylist({DisabledPath()}, false);
+}
+
+PresetPlaylist::ItemList::size_type ProjectMWrapper::FillCurrentMode()
+{
+    switch (_mode)
+    {
+        case PlaylistMode::Favorites:
+            return FillFavorites();
+        case PlaylistMode::Disabled:
+            return FillDisabled();
+        case PlaylistMode::AllPresets:
+        default:
+            return FillAllPresets();
+    }
+}
+
+std::string ProjectMWrapper::OriginalPresetPath(const std::string& disabledFile) const
+{
+    // The relative path inside the disabled folder, e.g. "Waveform/Wire Flat/x.milk".
+    auto disabledRoot = PathKey(Poco::Path(DisabledPath()).makeDirectory().toString());
+    auto fileKey = PathKey(disabledFile);
+    if (fileKey.compare(0, disabledRoot.size(), disabledRoot) != 0 || _presetPaths.empty())
+    {
+        return {};
+    }
+    const auto relativePath = WithForwardSlashes(disabledFile).substr(disabledRoot.size());
+
+    // Back into the preset folder that has its subfolder, or the first preset folder.
+    std::string fallback;
+    for (const auto& root : _presetPaths)
+    {
+        Poco::File rootDir(root);
+        if (!rootDir.exists() || !rootDir.isDirectory())
+        {
+            continue;
+        }
+
+        Poco::Path target(root);
+        target.makeDirectory();
+        target.append(Poco::Path(relativePath, Poco::Path::PATH_UNIX));
+        if (fallback.empty())
+        {
+            fallback = target.toString();
+        }
+        if (Poco::File(target.parent()).exists())
+        {
+            return target.toString();
+        }
+    }
+    return fallback;
+}
+
+void ProjectMWrapper::DisableCurrentPreset()
+{
+    auto presetFile = CurrentPresetPath();
+    if (presetFile.empty())
+    {
+        return;
+    }
+
+    Poco::Path source(presetFile);
+    const auto fileName = source.getFileName();
+
+    // Keep the folder structure (e.g. "disabled/Waveform/Wire Flat/x.milk"), so presets with the same name
+    // from different folders don't collide, and a preset can be restored by moving it back by hand.
+    auto relativePath = RelativePresetPath(presetFile);
+    if (relativePath.empty())
+    {
+        relativePath = fileName;
+    }
+
+    Poco::Path target(DisabledPath());
+    target.makeDirectory();
+    target.append(Poco::Path(relativePath, Poco::Path::PATH_UNIX));
+
+    if (!MovePresetFile(presetFile, target.toString()))
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(
+            "Could not disable preset: the presets folder may be read-only"));
+        return;
+    }
+
+    PushUndo({FavoriteChange::Kind::DisabledPreset, fileName, "", presetFile, target.toString()});
+    poco_information_f2(_logger, "Disabled preset %s (moved to %s)", presetFile, target.toString());
+
+    // Remove it from the playlist and play another preset.
+    std::string message = "Disabled: " + fileName + " (Ctrl+Z to undo)";
+    if (!RemoveFromPlaylistAndContinue(presetFile))
+    {
+        message = "Disabled: " + fileName + " (no presets left)";
+    }
+
+    Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(message));
+}
+
+void ProjectMWrapper::ReenableCurrentPreset()
+{
+    auto presetFile = CurrentPresetPath();
+    if (presetFile.empty())
+    {
+        return;
+    }
+
+    const auto fileName = Poco::Path(presetFile).getFileName();
+    const auto target = OriginalPresetPath(presetFile);
+    if (target.empty())
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(
+            "Could not re-enable: no preset folder to move it back to"));
+        return;
+    }
+
+    if (!MovePresetFile(presetFile, target))
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(
+            "Could not re-enable preset: the presets folder may be read-only"));
+        return;
+    }
+
+    PushUndo({FavoriteChange::Kind::ReenabledPreset, fileName, "", target, presetFile});
+    poco_information_f2(_logger, "Re-enabled preset %s (moved back to %s)", presetFile, target);
+
+    std::string message = "Re-enabled: " + fileName + " (Ctrl+Z to undo)";
+    if (!RemoveFromPlaylistAndContinue(presetFile))
+    {
+        // That was the last disabled preset.
+        _mode = PlaylistMode::AllPresets;
+        FillAllPresets();
+        PlayPresetFile(target);
+        message = "Re-enabled: " + fileName + " (no disabled presets left, playing all presets)";
+    }
+
+    Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(message));
+}
+
+void ProjectMWrapper::UndoDisable(const FavoriteChange& change)
+{
+    if (!Poco::File(change.disabledPath).exists() || !MovePresetFile(change.disabledPath, change.originalPath))
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new Notification::DisplayToast("Could not undo: " + change.fileName));
+        return;
+    }
+
+    poco_information_f1(_logger, "Re-enabled preset %s", change.originalPath);
+
+    std::string message = "Re-enabled: " + change.fileName;
+    switch (_mode)
+    {
+        case PlaylistMode::AllPresets:
+            // Reload all presets (the restored one is no longer left out) and show it again.
+            FillAllPresets();
+            PlayPresetFile(change.originalPath);
+            break;
+
+        case PlaylistMode::Disabled:
+            // The restored preset leaves the disabled list.
+            if (FillDisabled() == 0)
+            {
+                _mode = PlaylistMode::AllPresets;
+                FillAllPresets();
+                PlayPresetFile(change.originalPath);
+                message += " (no disabled presets left, playing all presets)";
+            }
+            else if (PathKey(CurrentPresetPath()) == PathKey(change.disabledPath))
+            {
+                PlayFromStart();
+            }
+            break;
+
+        case PlaylistMode::Favorites:
+            break;
+    }
+
+    Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(message));
+}
+
+void ProjectMWrapper::UndoReenable(const FavoriteChange& change)
+{
+    if (!Poco::File(change.originalPath).exists() || !MovePresetFile(change.originalPath, change.disabledPath))
+    {
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new Notification::DisplayToast("Could not undo: " + change.fileName));
+        return;
+    }
+
+    poco_information_f1(_logger, "Disabled preset again %s", change.disabledPath);
+
+    switch (_mode)
+    {
+        case PlaylistMode::Disabled:
+            // Back into the disabled list, and show it again.
+            FillDisabled();
+            PlayPresetFile(change.disabledPath);
+            break;
+
+        case PlaylistMode::AllPresets:
+        {
+            const bool wasPlaying = PathKey(CurrentPresetPath()) == PathKey(change.originalPath);
+            FillAllPresets();
+            if (wasPlaying)
+            {
+                PlayFromStart();
+            }
+            break;
+        }
+
+        case PlaylistMode::Favorites:
+            break;
+    }
+
+    Poco::NotificationCenter::defaultCenter().postNotification(
+        new Notification::DisplayToast("Disabled again: " + change.fileName));
+}
+
 void ProjectMWrapper::ToggleFavoritesOnly()
 {
-    if (!_favoritesOnly)
+    if (_mode != PlaylistMode::Favorites)
     {
-        auto count = FillPlaylist({FavoritesPath()});
+        auto count = FillFavorites();
         if (count == 0)
         {
-            // Nothing saved yet: restore the full playlist.
-            FillPlaylist(_presetPaths);
+            // Nothing saved yet: restore the previous list.
+            FillCurrentMode();
             Poco::NotificationCenter::defaultCenter().postNotification(
                 new Notification::DisplayToast("No favorites saved yet (press S to save one)"));
             return;
         }
-        _favoritesOnly = true;
+        _mode = PlaylistMode::Favorites;
         Poco::NotificationCenter::defaultCenter().postNotification(
             new Notification::DisplayToast("Favorites only (" + std::to_string(count) + " presets)"));
     }
     else
     {
-        FillPlaylist(_presetPaths);
-        _favoritesOnly = false;
+        _mode = PlaylistMode::AllPresets;
+        FillAllPresets();
+        Poco::NotificationCenter::defaultCenter().postNotification(
+            new Notification::DisplayToast("Playing all presets"));
+    }
+
+    // Start from the newly loaded list.
+    PlayFromStart();
+}
+
+void ProjectMWrapper::ToggleDisabledOnly()
+{
+    if (_mode != PlaylistMode::Disabled)
+    {
+        auto count = FillDisabled();
+        if (count == 0)
+        {
+            // Nothing disabled yet: restore the previous list.
+            FillCurrentMode();
+            Poco::NotificationCenter::defaultCenter().postNotification(
+                new Notification::DisplayToast("No disabled presets (press DEL to disable one)"));
+            return;
+        }
+        _mode = PlaylistMode::Disabled;
+        Poco::NotificationCenter::defaultCenter().postNotification(new Notification::DisplayToast(
+            "Disabled presets only (" + std::to_string(count) + " presets) - DEL re-enables"));
+    }
+    else
+    {
+        _mode = PlaylistMode::AllPresets;
+        FillAllPresets();
         Poco::NotificationCenter::defaultCenter().postNotification(
             new Notification::DisplayToast("Playing all presets"));
     }
@@ -672,7 +1173,7 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
 
     if (key == "projectM.transitionDuration")
     {
-        projectm_set_soft_cut_duration(_projectM, _projectMConfigView->getDouble("transitionDuration", 3.0));
+        projectm_set_soft_cut_duration(_projectM, TransitionDuration());
     }
 
     if (key == "projectM.hardCutsEnabled")
@@ -696,8 +1197,8 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
     }
 
     // Previously only applied on startup, so changing it in the settings window had no visible effect.
-    if (key == "projectM.beatSensitivity")
+    if (key == "projectM.beatSensitivity" || key == "projectM.beatAveraging")
     {
-        projectm_set_beat_sensitivity(_projectM, static_cast<float>(_projectMConfigView->getDouble("beatSensitivity", 1.0)));
+        ApplyBeatSensitivity();
     }
 }

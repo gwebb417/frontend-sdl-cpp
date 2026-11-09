@@ -1,0 +1,2 @@
+# Patch files must keep their exact (LF) line endings, or they no longer apply.
+*.patch -text

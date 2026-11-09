@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AboutWindow.h"
+#include "FpsCounter.h"
 #include "HelpWindow.h"
 #include "MainMenu.h"
 #include "PresetChooser.h"
@@ -16,6 +17,7 @@
 
 #include <Poco/Util/Subsystem.h>
 
+struct FrameStats;
 struct ImFont;
 class ProjectMWrapper;
 class SDLRenderingWindow;
@@ -61,7 +63,7 @@ public:
      * @brief Draws the UI, including toasts.
      * If neither a toast nor the UI are visible, this is basically a no-op.
      */
-    void Draw();
+    void Draw(const FrameStats& stats);
 
     /**
      * @brief Tells the caller whether the UI currently wants the keyboard input.
@@ -146,6 +148,8 @@ private:
     std::unique_ptr<PresetChooser> _presetChooser; //!< Preset quick search/filter popup.
 
     std::unique_ptr<ToastMessage> _toast; //!< Current toast to be displayed.
+
+    FpsCounter _fpsCounter; //!< FPS counter / frame-time overlay.
 
     bool _visible{false}; //!< Flag for settings window visibility.
 

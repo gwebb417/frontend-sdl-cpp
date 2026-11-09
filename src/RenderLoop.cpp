@@ -1,9 +1,12 @@
 #include "RenderLoop.h"
 
 #include "FPSLimiter.h"
+#include "FrameStats.h"
+#include "GpuTimer.h"
 
 #include "gui/ProjectMGUI.h"
 
+#include <Poco/Format.h>
 #include <Poco/NotificationCenter.h>
 
 #include <Poco/Util/Application.h>
@@ -38,6 +41,12 @@ void RenderLoop::Run()
             "Settings and favorites can't be saved: this folder is read-only. Move projectM to a folder you can write to."));
     }
 
+    GpuTimer gpuTimer;
+    gpuTimer.Initialize();
+
+    FrameStats stats;
+    stats.limiter = &limiter;
+
     while (!_wantsToQuit)
     {
         limiter.TargetFPS(_projectMWrapper.TargetFPS());
@@ -48,18 +57,96 @@ void RenderLoop::Run()
         _sdlRenderingWindow.ApplyPendingConfigChanges();
         CheckViewportSize();
         _audioCapture.FillBuffer();
-        _projectMWrapper.RenderFrame();
-        _projectMGui.Draw();
 
+        gpuTimer.Begin();
+        _projectMWrapper.RenderFrame();
+        gpuTimer.End();
+
+        stats.gpuTimeMs = gpuTimer.LastResultMs();
+        stats.expectedIntervalMs = ExpectedFrameIntervalMs(limiter);
+        _projectMGui.Draw(stats);
+
+        limiter.WorkDone();
         _sdlRenderingWindow.Swap();
 
         limiter.EndFrame();
 
         // Pass projectM the actual FPS value of the last frame.
         _projectMWrapper.UpdateRealFPS(limiter.FPS());
+
+        TrackSlowFrames(limiter, stats);
     }
 
+    gpuTimer.Destroy();
+
     notificationCenter.removeObserver(_quitNotificationObserver);
+}
+
+float RenderLoop::ExpectedFrameIntervalMs(const FPSLimiter& limiter)
+{
+    // The refresh rate rarely changes, so only query it once per second.
+    auto now = SDL_GetTicks64();
+    if (_refreshRateCheckedTicks == 0 || now - _refreshRateCheckedTicks >= 1000)
+    {
+        _refreshRate = _sdlRenderingWindow.RefreshRate();
+        _refreshRateCheckedTicks = now;
+    }
+
+    // Frames can't come faster than the refresh rate with vertical sync, nor faster than the FPS limit.
+    float refreshIntervalMs = _refreshRate > 0 ? 1000.0f / static_cast<float>(_refreshRate) : 0.0f;
+    return std::max(refreshIntervalMs, static_cast<float>(limiter.TargetFrameTimeMs()));
+}
+
+void RenderLoop::TrackSlowFrames(const FPSLimiter& limiter, const FrameStats& stats)
+{
+    auto now = SDL_GetTicks64();
+    if (_slowFrameWindowStart == 0)
+    {
+        _slowFrameWindowStart = now;
+    }
+
+    float interval = limiter.LastFrameIntervalMs();
+    _framesInWindow++;
+    if (stats.expectedIntervalMs > 0.0f && interval > stats.expectedIntervalMs * 1.5f)
+    {
+        _slowFramesInWindow++;
+        _longestSlowFrameMs = std::max(_longestSlowFrameMs, interval);
+    }
+    _maxGpuTimeInWindow = std::max(_maxGpuTimeInWindow, stats.gpuTimeMs);
+    _maxCpuTimeInWindow = std::max(_maxCpuTimeInWindow, limiter.LastWorkTimeMs());
+
+    if (now - _slowFrameWindowStart < 10000)
+    {
+        return;
+    }
+
+    if (_slowFramesInWindow > 0)
+    {
+        std::string gpuText = _maxGpuTimeInWindow >= 0.0f ? Poco::format("%.1f ms", static_cast<double>(_maxGpuTimeInWindow)) : std::string("n/a");
+        std::string message = Poco::format(
+            "Slow frames: %u of %u in the last 10 s took longer than %.1f ms (longest %.1f ms). Highest render times: GPU %s, CPU %.1f ms.",
+            _slowFramesInWindow, _framesInWindow,
+            static_cast<double>(stats.expectedIntervalMs * 1.5f), static_cast<double>(_longestSlowFrameMs),
+            gpuText, static_cast<double>(_maxCpuTimeInWindow));
+
+        // A single slow frame happens on most preset switches (shader compilation), so only
+        // repeated slow frames are logged at the default log level.
+        if (_slowFramesInWindow >= 3)
+        {
+            poco_information(_logger, message);
+        }
+        else
+        {
+            poco_debug(_logger, message);
+        }
+    }
+
+    _slowFrameWindowStart = now;
+    _framesInWindow = 0;
+    _slowFramesInWindow = 0;
+    _longestSlowFrameMs = 0.0f;
+    _maxGpuTimeInWindow = -1.0f;
+    _maxCpuTimeInWindow = 0.0f;
 }
 
 void RenderLoop::PollEvents()
@@ -255,7 +342,12 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             {
                 _sdlRenderingWindow.NextDisplay();
             }
-            else
+            break;
+
+        case SDLK_RETURN:
+        case SDLK_KP_ENTER:
+            // Plain Enter only, so Alt+Enter etc. stay free. Ignore key repeat while held.
+            if (!_keyStates.AnyPressed() && !event.repeat)
             {
                 _projectMGui.ShowPresetChooser();
             }
@@ -297,7 +389,15 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             }
             break;
         case SDLK_DELETE:
-            _projectMWrapper.RemoveCurrentPresetFromFavorites();
+            // Either Ctrl key (modifierPressed only covers the left one).
+            if (keyModifier & KMOD_CTRL)
+            {
+                _projectMWrapper.ToggleDisabledOnly();
+            }
+            else
+            {
+                _projectMWrapper.DeleteKeyPressed();
+            }
             break;
 
         case SDLK_z:
@@ -434,7 +534,7 @@ void RenderLoop::HandleDropEvent(const SDL_Event& event)
         return;
     }
 
-    // first we want to get the config settings that are relevant ehre
+    // first we want to get the config settings that are relevant here
     // namely skipToDropped and droppedFolderOverride
     // we can get them from the projectMWrapper, in the _projectMConfigView available on it
     const bool skipToDropped = _userConfig->getBool("projectM.skipToDropped", true);

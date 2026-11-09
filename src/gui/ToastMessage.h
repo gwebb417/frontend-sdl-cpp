@@ -14,9 +14,11 @@ public:
     /**
      * @brief Draws the toast message and returns if it still should be kept.
      * @param lastFrameTime The time in seconds since the last frame.
+     * @param position Screen position (see ScreenPosition), from the "projectM.toastPosition" setting.
+     * @param verticalOffset Extra distance from the top/bottom edge, to make room for the FPS counter.
      * @return True if the toast message should still be displayed, false if not.
      */
-    bool Draw(float lastFrameTime);
+    bool Draw(float lastFrameTime, const std::string& position, float verticalOffset);
 
 private:
 

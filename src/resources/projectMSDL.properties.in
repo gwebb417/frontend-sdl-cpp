@@ -40,8 +40,9 @@ window.top = 0
 # This will limit max FPS to the vertical sync frequency but prevents tearing.
 window.waitForVerticalSync = true
 
-# Tries to use adaptive vertical sync if waitForVerticalSync is enabled.
-# When using a monitor capable of adaptive sync, setting projectM.fps to 0 gives the best results.
+# Adaptive vertical sync, only used if waitForVerticalSync is enabled: a late frame is shown right away
+# (may tear briefly) instead of waiting a whole extra refresh. Falls back to normal vertical sync if the
+# graphics driver doesn't support it. This is not FreeSync/G-Sync, which are set in the graphics driver.
 window.adaptiveVerticalSync = true
 
 # If true, displays the current preset name (and locked state) in the window title.
@@ -51,6 +52,13 @@ window.displayPresetNameInTitle = true
 # User-defined scaling factor for UI/font size. Values will be clamped to a range from 0.1 up to 3.0 (10% and 300%, respectively).
 # Useful if the automatically determined UI size is either to small or too large.
 window.uiScale = 1.0
+
+# Shows an FPS counter. Position: top-left, top-right, bottom-left or bottom-right.
+# Size is independent of uiScale. frameTimes also shows frame/GPU/CPU times and a frame-time graph.
+window.fpsCounter = false
+window.fpsCounter.position = top-left
+window.fpsCounter.size = 1.0
+window.fpsCounter.frameTimes = false
 
 ### projectM settings
 
@@ -68,6 +76,9 @@ projectM.texturePath = @DEFAULT_TEXTURES_PATH@
 
 # If true, displays the built-in projectM logo preset on startup.
 projectM.enableSplash = false
+
+# Where toast messages appear: top-left, top-right, bottom-left, bottom-right or center.
+projectM.toastPosition = top-right
 
 # Preset display duration in seconds. If the time has passed, a soft cut is done to the next preset.
 projectM.displayDuration = 30
@@ -99,6 +110,11 @@ projectM.hardCutDuration = 20
 # Controls aspect ration correction in presets. Not all presets use aspect ratio, so this setting  only has an effect
 # on presets using the aspect ration actively.
 projectM.aspectCorrectionEnabled = true
+
+# How strongly presets react to the music: 0 = not at all, 1 = normal, 2 = twice as strong.
+# If beatAveraging is true, presets react the standard Milkdrop way and beatSensitivity is not used.
+projectM.beatSensitivity = 1.0
+projectM.beatAveraging = false
 
 
 ### Logging settings

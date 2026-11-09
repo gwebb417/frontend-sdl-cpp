@@ -39,7 +39,12 @@ bool PresetChooser::Draw()
     }
 
     // Default size on first use. After that, ImGui remembers the size the user resized it to in projectMSDL.UI.ini.
+    // Never larger than the program window (it was cut off in small windows), and centered whenever it opens.
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowSize(ImVec2(1131, 540), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(200, 150), ImVec2(viewport->WorkSize.x * 0.95f, viewport->WorkSize.y * 0.95f));
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f, viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal(windowId.c_str(), &_isOpen, ImGuiWindowFlags_NoCollapse))
     {
         ImGui::PushStyleColor(ImGuiCol_Text, 0x80808080);
@@ -84,7 +89,9 @@ bool PresetChooser::Draw()
             NavigateAllItems(itemsPerPage);
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_Enter))
+        // Enter also opens this window. Ignore it on the first frame (the opening key press) and
+        // don't repeat while it's held, so opening the search doesn't instantly pick a preset.
+        if (!_firstDraw && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)))
         {
             PlayPresetIndex(_selectedIndex);
             ImGui::CloseCurrentPopup();

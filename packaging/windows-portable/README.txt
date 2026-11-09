@@ -18,13 +18,14 @@ Keys
 ----
 
 ESC          Show/hide the menu (File > Settings, Help > Quick Help lists all keys)
-M            Search presets
+ENTER        Search presets
 N / P / R    Next / previous / random preset
 SPACE        Lock the current preset
 S            Save the current preset to favorites
 F            Switch between favorites only and all presets
-DEL          Remove the current preset from favorites
-CTRL-Z       Undo the last favorites save/remove
+DEL          Disable the current preset (favorites mode: remove from favorites)
+CTRL-DEL     Switch to disabled presets only (there, DEL re-enables)
+CTRL-Z       Undo the last save, removal, disable or re-enable
 CTRL-F       Fullscreen
 CTRL-Q       Quit
 

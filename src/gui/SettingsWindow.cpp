@@ -6,6 +6,7 @@
 
 #include "ProjectMGUI.h"
 #include "NumberInput.h"
+#include "ScreenPosition.h"
 
 #include "notifications/DisplayToast.h"
 
@@ -223,7 +224,7 @@ void SettingsWindow::DrawProjectMSettingsTab()
 
             ImGui::TableNextRow();
             LabelWithTooltip("Per-Point Mesh Size X/Y",
-                             "Size of the per-point transformation grid.\nHigher values produce better quality, but require exponentially more CPU time to calculate.\nMilkdrop's default is 48x32.");
+                             "Size of the per-point transformation grid.\nHigher values produce better quality, but require exponentially more CPU time to calculate.\nMilkdrop's default is 48x36.");
             // Built-in defaults below match the shipped projectMSDL.properties and the defaults used in
             // ProjectMWrapper/SDLRenderingWindow, so the displayed value is the one actually in use.
             IntegerSettingVec("projectM.meshX", "projectM.meshY", 96, 54, 8, 300);
@@ -317,9 +318,13 @@ void SettingsWindow::DrawWindowSettingsTab()
             BooleanSetting("window.waitForVerticalSync", true);
 
             ImGui::TableNextRow();
-            LabelWithTooltip("  Use Adaptive Sync",
-                             "Tries to use adaptive vertical sync if vertical sync is enabled.\nWhen using a monitor capable of adaptive sync, setting FPS to 0 gives the best results.");
+            // Adaptive vsync is only used while "Wait for Vertical Sync" is on, so grey it out otherwise.
+            const bool verticalSyncEnabled = _effectiveConfiguration->getBool("window.waitForVerticalSync", true);
+            ImGui::BeginDisabled(!verticalSyncEnabled);
+            LabelWithTooltip("  Use Adaptive VSync",
+                             "If a frame is late, show it right away (may tear briefly) instead of waiting a whole extra refresh.\nReduces stutter when a preset can't keep up with the refresh rate.\nOnly used while \"Wait for Vertical Sync\" is on. Falls back to normal vertical sync if the graphics driver\ndoesn't support it (the log file says which mode is used).\nThis is not FreeSync/G-Sync, which are enabled in the graphics driver settings.");
             BooleanSetting("window.adaptiveVerticalSync", true);
+            ImGui::EndDisabled();
 
             ImGui::TableNextRow();
             LabelWithTooltip("Preset Name in Title",
@@ -331,9 +336,50 @@ void SettingsWindow::DrawWindowSettingsTab()
                              "Controls displaying toast messages/notifications, e.g. when changing the audio device.");
             BooleanSetting("projectM.displayToasts", true);
 
+            const std::vector<std::pair<std::string, std::string>> corners{
+                {ScreenPosition::TopLeft, "Top left"},
+                {ScreenPosition::TopRight, "Top right"},
+                {ScreenPosition::BottomLeft, "Bottom left"},
+                {ScreenPosition::BottomRight, "Bottom right"}};
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Toast Position",
+                             "Where toast messages appear.\nIf the FPS counter is in the same corner, toasts are shown next to it instead of on top of it.");
+            auto toastPositions = corners;
+            toastPositions.emplace_back(ScreenPosition::Center, "Center");
+            ChoiceSetting("projectM.toastPosition", ScreenPosition::TopRight, toastPositions);
+
             ImGui::TableNextRow();
             LabelWithTooltip("UI Scaling Factor", "Multiplies the default UI/font size with the given factor.");
             DoubleSetting("window.uiScale", 1.0, 0.1, 3.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Show FPS Counter", "Shows the current frames per second in a corner of the screen.");
+            BooleanSetting("window.fpsCounter", false);
+
+            const bool fpsCounterEnabled = _effectiveConfiguration->getBool("window.fpsCounter", false);
+            ImGui::BeginDisabled(!fpsCounterEnabled);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Position", "Corner of the screen the FPS counter is shown in.");
+            ChoiceSetting("window.fpsCounter.position", ScreenPosition::TopLeft, corners);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Size", "Size of the FPS counter. Independent of the UI scaling factor.");
+            DoubleSetting("window.fpsCounter.size", 1.0, 0.25, 4.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Show Frame Times",
+                             "Also shows how long frames take, with a graph of the last 240 frames.\n"
+                             "Frame: time between frames as they are shown, average (and maximum) of the last half second.\n"
+                             "GPU: time the graphics card needs to draw the preset. CPU: time the program needs per frame.\n"
+                             "Graph: one bar per frame, the line is the frame time the refresh rate or FPS limit should give.\n"
+                             "Red bars took more than 1.5 times as long.\n"
+                             "If GPU and CPU are low but motion still stutters, frames are being dropped after projectM\n"
+                             "(e.g. by the desktop compositor in borderless mode); exclusive fullscreen may help.");
+            BooleanSetting("window.fpsCounter.frameTimes", false);
+
+            ImGui::EndDisabled();
 
             ImGui::EndTable();
         }
@@ -359,8 +405,20 @@ void SettingsWindow::DrawAudioSettingsTab()
             AudioDeviceSetting();
 
             ImGui::TableNextRow();
-            LabelWithTooltip("Beat Sensitivity", "How strongly presets react to the music: 0 = not at all, 1 = normal, 2 = twice as strong. Also changes the size of waveforms drawn from the audio. Up/Down arrow keys change it too.");
+            LabelWithTooltip("Beat Averaging",
+                             "On: presets react to the music the standard Milkdrop way. The beat is compared with the last few\n"
+                             "seconds of music, so quiet and loud songs get about the same amount of movement.\n"
+                             "Beat Sensitivity is not used then (greyed out), and the Up/Down arrow keys don't change it.\n"
+                             "Off: Beat Sensitivity sets how strongly presets react.");
+            BooleanSetting("projectM.beatAveraging", false);
+
+            ImGui::TableNextRow();
+            ImGui::BeginDisabled(_effectiveConfiguration->getBool("projectM.beatAveraging", false));
+            LabelWithTooltip("  Beat Sensitivity",
+                             "How strongly presets react to the music: 0 = not at all, 1 = normal, 2 = twice as strong.\n"
+                             "Up/Down arrow keys change it too. Not used while Beat Averaging is on.");
             DoubleSetting("projectM.beatSensitivity", 1.0, 0.0, 2.0);
+            ImGui::EndDisabled();
 
             ImGui::EndTable();
         }
@@ -472,7 +530,8 @@ void SettingsWindow::LabelWithTooltip(const std::string& label, const std::strin
     ImGui::TableSetColumnIndex(0);
 
     ImGui::TextUnformatted(label.c_str());
-    if (ImGui::IsItemHovered())
+    // AllowWhenDisabled: greyed-out settings still explain themselves (and why they're greyed out).
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
     {
         ImGui::BeginTooltip();
         ImGui::TextUnformatted(tooltipText.c_str());
@@ -582,6 +641,49 @@ void SettingsWindow::IntegerSettingVec(const std::string& property1, const std::
     ResetButton(property1, ToConfigString(defaultValue1), property2, ToConfigString(defaultValue2));
 
     if (_commandLineConfiguration->has(property1) || _commandLineConfiguration->has(property2))
+    {
+        OverriddenSettingMarker();
+    }
+}
+
+void SettingsWindow::ChoiceSetting(const std::string& property, const std::string& defaultValue,
+                                   const std::vector<std::pair<std::string, std::string>>& choices)
+{
+    ImGui::TableSetColumnIndex(1);
+
+    auto value = _effectiveConfiguration->getString(property, defaultValue);
+
+    std::string currentLabel = value;
+    for (const auto& choice : choices)
+    {
+        if (choice.first == value)
+        {
+            currentLabel = choice.second;
+        }
+    }
+
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::BeginCombo(std::string("##choice_" + property).c_str(), currentLabel.c_str()))
+    {
+        for (const auto& choice : choices)
+        {
+            bool selected = choice.first == value;
+            if (ImGui::Selectable(choice.second.c_str(), selected))
+            {
+                StoreSetting(property, choice.first, defaultValue);
+                _changed = true;
+            }
+            if (selected)
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ResetButton(property, defaultValue);
+
+    if (_commandLineConfiguration->has(property))
     {
         OverriddenSettingMarker();
     }

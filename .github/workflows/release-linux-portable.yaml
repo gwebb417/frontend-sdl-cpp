@@ -84,6 +84,16 @@ jobs:
           ref: ${{ inputs.projectMref }}
           submodules: recursive
 
+      - name: Checkout projectMSDL (this fork)
+        uses: actions/checkout@v6
+        with:
+          path: frontend-sdl2
+          submodules: recursive
+
+      # Same patch as the Windows build (vcpkg overlay port): makes projectm_set_beat_sensitivity() work.
+      - name: Patch libprojectM
+        run: git -C projectm apply --verbose "$GITHUB_WORKSPACE/frontend-sdl2/vcpkg-overlay/ports/projectm/beat-sensitivity.patch"
+
       - name: Build libprojectM
         run: |
           cmake -G Ninja -S projectm -B cmake-build-libprojectm \
@@ -92,12 +102,6 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install-libprojectm"
           cmake --build cmake-build-libprojectm --parallel
           cmake --install cmake-build-libprojectm
-
-      - name: Checkout projectMSDL (this fork)
-        uses: actions/checkout@v6
-        with:
-          path: frontend-sdl2
-          submodules: recursive
 
       - name: Checkout Cream of the Crop presets
         uses: actions/checkout@v6

@@ -10,6 +10,9 @@ add_executable(projectMSDL WIN32 MACOSX_BUNDLE
         AudioCapture.h
         FPSLimiter.cpp
         FPSLimiter.h
+        FrameStats.h
+        GpuTimer.cpp
+        GpuTimer.h
         ProjectMSDLApplication.cpp
         ProjectMSDLApplication.h
         ProjectMWrapper.cpp

@@ -78,6 +78,12 @@ public:
     int GetCurrentDisplay();
 
     /**
+     * @brief Returns the refresh rate of the display the window is on.
+     * @return The refresh rate in Hz, or 0 if unknown.
+     */
+    int RefreshRate() const;
+
+    /**
      * @brief Returns the dimensions of the window.
      * @param [out] width The width of the window.
      * @param [out] height The height of the window.

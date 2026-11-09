@@ -6,6 +6,8 @@
 #include <Poco/Util/PropertyFileConfiguration.h>
 
 #include <string>
+#include <utility>
+#include <vector>
 
 class AudioCapture;
 class ProjectMGUI;
@@ -103,6 +105,15 @@ private:
      * @param max Maximum value.
      */
     void DoubleSetting(const std::string& property, double defaultValue, double min, double max);
+
+    /**
+     * @brief Displays a drop-down list to choose one of several values.
+     * @param property The property name in the config.
+     * @param defaultValue Default value for the property if not set.
+     * @param choices Pairs of (value stored in the config, label shown in the list).
+     */
+    void ChoiceSetting(const std::string& property, const std::string& defaultValue,
+                       const std::vector<std::pair<std::string, std::string>>& choices);
 
     /**
      * @brief Displays a checkbox to override the window startup position, and if this is selected, displays two sliders.

@@ -1,5 +1,8 @@
 #include "ProjectMGUI.h"
 
+#include "FrameStats.h"
+#include "gui/ScreenPosition.h"
+
 #include "AnonymousProFont.h"
 #include "LiberationSansFont.h"
 #include "ProjectMSDLApplication.h"
@@ -131,15 +134,17 @@ bool ProjectMGUI::Visible() const
     return _visible;
 }
 
-void ProjectMGUI::Draw()
+void ProjectMGUI::Draw(const FrameStats& stats)
 {
     // Reset key/mouse capture flags in case ImGui enabled them in the previous frame
     auto& io = ImGui::GetIO();
     io.WantCaptureKeyboard = false;
     io.WantCaptureMouse = false;
 
+    const bool fpsCounterEnabled = FpsCounter::Enabled();
+
     // Don't render UI at all if there's no need.
-    if (!_toast && !_visible && !_presetChooser)
+    if (!_toast && !_visible && !_presetChooser && !fpsCounterEnabled)
     {
         // Reset the frame timer while idle. Otherwise the first frame of the next
         // toast counts all the idle time as elapsed and the toast expires instantly.
@@ -199,9 +204,22 @@ void ProjectMGUI::Draw()
         _lastFrameTicks = currentFrameTicks;
     }
 
+    // The FPS counter is drawn first so a toast in the same corner can move past it.
+    float fpsCounterHeight{0.0f};
+    std::string fpsCounterPosition;
+    if (fpsCounterEnabled)
+    {
+        // Font size of the counter follows the display's DPI scaling, but not the UI scale (it has its own size setting).
+        float displayScale = _userScalingFactor > 0.0f && _textScalingFactor > 0.0f ? _textScalingFactor / _userScalingFactor : 1.0f;
+        fpsCounterHeight = _fpsCounter.Draw(stats, _uiFont, displayScale);
+        fpsCounterPosition = FpsCounter::Position();
+    }
+
     if (_toast)
     {
-        if (!_toast->Draw(secondsSinceLastFrame))
+        auto toastPosition = Poco::Util::Application::instance().config().getString("projectM.toastPosition", ScreenPosition::TopRight);
+        float toastOffset = toastPosition == fpsCounterPosition ? fpsCounterHeight : 0.0f;
+        if (!_toast->Draw(secondsSinceLastFrame, toastPosition, toastOffset))
         {
             _toast.reset();
         }

@@ -1,0 +1,28 @@
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -105,6 +105,25 @@
+     m_audioStorage.UpdateFrameAudioData(m_timeKeeper->SecondsSinceLastFrame(), m_frameCount);
+     auto audioData = m_audioStorage.GetFrameAudioData();
+ 
++    // Beat sensitivity (patch from the projectMSDL fork): libprojectM 4.1 stores this setting but never used it.
++    // bass/mid/treb/vol are relative to their long-term average (1.0 = average), so scaling the audio input
++    // has no lasting effect. Scale how far the values deviate from the average instead:
++    // 1 = unchanged, 0 = no reaction to the music, 2 = twice as strong.
++    if (m_beatSensitivity != 1.0f)
++    {
++        auto applySensitivity = [this](float value) {
++            return std::max(0.0f, 1.0f + (value - 1.0f) * m_beatSensitivity);
++        };
++        audioData.bass = applySensitivity(audioData.bass);
++        audioData.bassAtt = applySensitivity(audioData.bassAtt);
++        audioData.mid = applySensitivity(audioData.mid);
++        audioData.midAtt = applySensitivity(audioData.midAtt);
++        audioData.treb = applySensitivity(audioData.treb);
++        audioData.trebAtt = applySensitivity(audioData.trebAtt);
++        audioData.vol = applySensitivity(audioData.vol);
++        audioData.volAtt = applySensitivity(audioData.volAtt);
++    }
++
+     // Check if the preset isn't locked, and we've not already notified the user
+     if (!m_presetChangeNotified)
+     {

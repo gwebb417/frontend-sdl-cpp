@@ -1,6 +1,7 @@
 #include "ToastMessage.h"
 
 #include "gui/ProjectMGUI.h"
+#include "gui/ScreenPosition.h"
 
 #include "imgui.h"
 
@@ -13,7 +14,7 @@ ToastMessage::ToastMessage(std::string toastText, float displayTime)
 {
 }
 
-bool ToastMessage::Draw(float lastFrameTime)
+bool ToastMessage::Draw(float lastFrameTime, const std::string& position, float verticalOffset)
 {
     constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
                                              ImGuiWindowFlags_AlwaysAutoResize |
@@ -22,14 +23,9 @@ bool ToastMessage::Draw(float lastFrameTime)
                                              ImGuiWindowFlags_NoNav |
                                              ImGuiWindowFlags_NoMove;
 
-        // Anchor the toast's top-right corner to the top-right of the window, with some padding.
+    // Anchor the toast to the configured corner (or the center), with some padding.
     // WorkPos/WorkSize exclude the main menu bar while it's visible, so toasts don't overlap it.
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const float padding = ImGui::GetFontSize();
-    ImGui::SetNextWindowPos(
-        ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - padding, viewport->WorkPos.y + padding),
-        ImGuiCond_Always,
-        ImVec2(1.0f, 0.0f));
+    ScreenPosition::SetNextWindowPosition(position, ImGui::GetFontSize(), verticalOffset);
 
     // Fade out toast in the last second-
     _displayTimeLeft -= lastFrameTime;

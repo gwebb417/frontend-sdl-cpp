@@ -25,12 +25,15 @@ add_library(ProjectMSDL-GUI STATIC
         AboutWindow.h
         FileChooser.cpp
         FileChooser.h
+        FpsCounter.cpp
+        FpsCounter.h
         HelpWindow.cpp
         HelpWindow.h
         MainMenu.cpp
         MainMenu.h
         PresetChooser.cpp
         PresetChooser.h
+        ScreenPosition.h
         ProjectMGUI.cpp
         ProjectMGUI.h
         SettingsWindow.cpp

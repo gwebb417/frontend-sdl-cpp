@@ -24,10 +24,16 @@ they're missing.
 
 - **Favorites:** save presets to a favorites folder, play only your favorites, remove them again and undo (see
   [Keybinds](#keybinds)).
-- **Preset search window:** from upstream PR #139, plus fixes. Old key presses no longer end up in the search
+- **Disable presets you don't like:** DEL moves the current preset into a `disabled` folder (in `userdata` in
+  portable mode) and plays another one. Ctrl+Z undoes it. CTRL-DEL plays only your disabled presets, so you can
+  re-enable some later. See [Disabled presets](#disabled-presets).
+- **Preset search window** (ENTER): from upstream PR #139, plus fixes. Old key presses no longer end up in the search
   field, the window no longer closes right after opening, and it no longer crashes when no presets are loaded.
+- **FPS counter** (Settings > Window / Rendering): in any corner, with its own size setting independent of the UI
+  scale. Optionally shows frame times: the time between frames, the GPU and CPU time per frame, and a graph of the
+  last 240 frames. Repeated slow frames are also written to the log file.
 - **Toasts** for Space (lock), Y (shuffle), A (aspect correction), Ctrl+C (copy path) and all favorites actions.
-  Toasts are shown in the top-right corner and no longer disappear instantly.
+  Toasts no longer disappear instantly and can be shown in any corner or the center of the screen.
 - **Quick Help** (Help menu) lists all keys, grouped by feature.
 - **Portable mode:** put a file named `portable.txt` next to `projectMSDL.exe` and your settings, favorites, UI layout
   and log are stored in a `userdata` folder next to it instead of `%APPDATA%\projectM` (or the equivalent user config
@@ -53,7 +59,15 @@ they're missing.
 ### Bug fixes
 
 - Shuffle no longer turns itself off after pressing N, P or R.
-- M opens the preset search; Ctrl+M only moves the window to the next monitor.
+- R and shuffle never pick the preset that is already playing (with few presets, e.g. in favorites mode, it often
+  seemed like nothing happened).
+- The FPS limit was not exact (60 FPS gave about 62.5, 144 about 166). It now uses a high-resolution timer.
+- Command-line options like `--presetPath` were ignored on Windows.
+- With a Transition Duration of 0, presets stopped changing automatically after the first switch (libprojectM divides
+  by the duration). 0 now means a 0.05 second transition, which still looks instant.
+- The preset search window was cut off in windows smaller than about 1130x540 pixels. It now fits the window and
+  opens centered.
+- Ctrl+M only moves the window to the next monitor (the preset search is on ENTER now).
 - "Exclusive Mode Resolution" had no effect (wrong setting name).
 - "Enable Hard Cuts" toggled aspect correction instead of hard cuts.
 - The "Play Next Preset" menu item went to the previous preset.
@@ -62,9 +76,14 @@ they're missing.
   window was positioned past the monitor edge.
 - Reset buttons were cut off ("Res") at larger UI scales.
 - Built-in defaults (mesh size, window size, V-Sync, logo preset) now match the shipped config file.
-- **Beat Sensitivity** had no effect, because libprojectM 4 stores the value but never uses it. The app now applies it
-  itself by scaling the audio passed to projectM: 0 = presets don't react to the music, 1 = normal, 2 = twice as strong.
-  This adds no latency.
+- **Beat Sensitivity** had no effect, because libprojectM 4 stores the value but never uses it. This fork patches
+  libprojectM (see `vcpkg-overlay/ports/projectm/beat-sensitivity.patch`) to apply it to the bass/mid/treble values
+  presets react to: 0 = presets don't react to the music, 1 = normal, 2 = twice as strong. (v1.1 scaled the audio
+  instead, which faded out after a few seconds because libprojectM compares the values with their recent average.)
+  Turn on **Beat Averaging** (Settings > Audio or the Options menu) for the standard Milkdrop reaction; Beat
+  Sensitivity is then greyed out and the Up/Down keys don't change it.
+- "Use Adaptive VSync" is greyed out while "Wait for Vertical Sync" is off (it has no effect then), the log says which
+  vertical sync mode is actually used, and its description no longer suggests it's FreeSync/G-Sync.
 - The app could freeze when switching presets (mostly on Linux, e.g. pressing R): the audio thread and the preset
   switch could each wait for a lock the other held. Audio data now uses its own notification channel.
 - Broken presets (e.g. "Could not compile per-pixel code") were skipped silently, but the app still treated them as
@@ -80,24 +99,39 @@ they're missing.
 
 All keys are also listed in the app under **Help > Quick Help**.
 
-### Favorites (new in this fork)
+### Favorites and disabled presets (new in this fork)
 
-| Key    | Action                                                         |
-|--------|----------------------------------------------------------------|
-| S      | Save the current preset to favorites                           |
-| DEL    | Remove the current preset from favorites                       |
-| F      | Switch between favorites only and all presets                  |
-| CTRL-Z | Undo the last save/delete (up to 20 steps)                     |
+| Key    | Action                                                                     |
+|--------|----------------------------------------------------------------------------|
+| S      | Save the current preset to favorites                                       |
+| F      | Switch between favorites only and all presets                              |
+| DEL    | Disable the current preset (favorites-only mode: remove it from favorites; disabled-only mode: re-enable it) |
+| CTRL-DEL | Switch between disabled presets only and all presets                   |
+| CTRL-Z | Undo the last save, removal, disable or re-enable (up to 20 steps)        |
 
 Favorites are stored as copies of the `.milk` files in `%APPDATA%\projectM\favorites\` by default, or in
 `userdata\favorites\` next to the exe in portable mode. Set `projectM.favoritesPath` in your config file to use a
 different folder.
 
+### Disabled presets
+
+DEL moves the current preset's file from the presets folder into `disabled` next to `favorites` (so
+`userdata\disabled\` in portable mode), keeping its subfolder, e.g. `disabled\Waveform\Wire Flat\name.milk`. Set
+`projectM.disabledPath` in your config file to use a different folder.
+
+To look at your disabled presets again later, press CTRL-DEL: only the disabled presets play (N, P, R and the preset
+search work as usual). DEL then re-enables the current one, which moves it back to its subfolder in `presets`, and
+CTRL-Z undoes that. CTRL-DEL again (or F) switches back. You can also move a file back by hand.
+
+When you update to a new version and copy your `userdata` folder over, the new `presets` folder contains all presets
+again. Presets that also exist in `disabled` (same subfolder and name) are left out anyway, so they stay disabled.
+Favorites are separate copies: disabling a preset doesn't remove it from your favorites.
+
 ### Preset search
 
 | Key                  | Action                                            |
 |----------------------|---------------------------------------------------|
-| M                    | Open the preset search window                     |
+| ENTER                | Open the preset search window                     |
 | Up/Down/PgUp/PgDown  | Move through the list                             |
 | Home/End             | Jump to the first/last preset                     |
 | ENTER                | Play the selected preset (hold SHIFT for a smooth transition) |
@@ -117,7 +151,7 @@ type must appear in the preset name (not case sensitive).
 | SPACE     | Lock/unlock the current preset (shows a toast)  |
 | Y         | Toggle shuffle (shows a toast)                  |
 | A         | Toggle aspect correction (shows a toast)        |
-| UP / DOWN | Increase / decrease beat sensitivity            |
+| UP / DOWN | Increase / decrease beat sensitivity (not while Beat Averaging is on) |
 | CTRL-C    | Copy the current preset's path (shows a toast)  |
 | CTRL-F    | Toggle fullscreen                               |
 | CTRL-M    | Move the window to the next display             |
@@ -130,6 +164,10 @@ This builds a single `projectMSDL.exe` with all libraries (SDL2, Poco, FreeType,
 runtime) linked in statically, so no DLLs are needed. Requires Visual Studio (2026 here, adjust the generator name for
 other versions) and [vcpkg](https://github.com/microsoft/vcpkg) (here in `C:\vcpkg`). vcpkg builds all dependencies
 from `vcpkg.json` automatically during the first configure, which can take a while.
+
+libprojectM is built from the overlay port in `vcpkg-overlay/ports/projectm` (set in `vcpkg-configuration.json`): the
+official vcpkg port plus `beat-sensitivity.patch`, which makes the Beat Sensitivity setting work. The Linux workflow
+applies the same patch.
 
 One-time setup of the build folder (the exe is installed into `C:\dev\projectm-standalone`):
 
@@ -226,6 +264,9 @@ favorite dependency management/packaging tool. For testing, you can install libp
 home/development directory using `CMAKE_INSTALL_PREFIX`, then pass the same install path to the frontend-sdl2 build
 using `CMAKE_PREFIX_PATH`. Please refer
 to [CMake's documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_PREFIX_PATH.html) for details.
+
+Without `vcpkg-overlay/ports/projectm/beat-sensitivity.patch` everything works, except that the Beat Sensitivity
+setting has no effect. To apply it to a libprojectM 4.1 checkout: `git -C projectm apply /path/to/beat-sensitivity.patch`.
 
 ### Dependencies
 

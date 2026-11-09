@@ -21,6 +21,10 @@
 ProjectMSDLApplication::ProjectMSDLApplication()
     : Poco::Util::Application()
 {
+    // Poco defaults to Windows-style options ("/presetPath:...") on Windows, so the documented
+    // "--presetPath=..." / "-p ..." options were silently ignored there. Use the same style everywhere.
+    setUnixOptions(true);
+
     // Note: order here is important, as subsystems are initialized in the same order.
     addSubsystem(new SDLRenderingWindow);
     addSubsystem(new ProjectMWrapper);
@@ -239,7 +243,7 @@ void ProjectMSDLApplication::defineOptions(Poco::Util::OptionSet& options)
                           .binding("window.waitForVerticalSync", _commandLineOverrides));
 
     options.addOption(Option("vsyncAdaptive", "",
-                             "If true and vsync is enabled, tries to use adaptive vsync. Set FPS to 0 for best results.",
+                             "If true and vsync is enabled, shows late frames right away instead of waiting a whole extra refresh (adaptive vsync, not FreeSync/G-Sync).",
                              false, "<0/1>", true)
                           .binding("window.adaptiveVerticalSync", _commandLineOverrides));
 

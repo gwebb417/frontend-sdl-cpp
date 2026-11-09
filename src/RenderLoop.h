@@ -9,7 +9,9 @@
 #include <Poco/Logger.h>
 #include <Poco/NObserver.h>
 
+class FPSLimiter;
 class ProjectMGUI;
+struct FrameStats;
 
 class RenderLoop
 {
@@ -76,6 +78,26 @@ protected:
      * @param event The drop event from SDL
      */
     void HandleDropEvent(const SDL_Event& event);
+
+    /**
+     * @brief Returns the frame interval the current settings should give (refresh rate or FPS limit).
+     */
+    float ExpectedFrameIntervalMs(const FPSLimiter& limiter);
+
+    /**
+     * @brief Counts frames that took much longer than expected and logs a summary every 10 seconds.
+     */
+    void TrackSlowFrames(const FPSLimiter& limiter, const FrameStats& stats);
+
+    int _refreshRate{0}; //!< Refresh rate of the window's display in Hz, 0 if unknown.
+    uint64_t _refreshRateCheckedTicks{0}; //!< When the refresh rate was last queried.
+
+    uint64_t _slowFrameWindowStart{0}; //!< Start of the current 10-second slow-frame logging window.
+    unsigned int _framesInWindow{0};
+    unsigned int _slowFramesInWindow{0};
+    float _longestSlowFrameMs{0.0f};
+    float _maxGpuTimeInWindow{-1.0f};
+    float _maxCpuTimeInWindow{0.0f};
 
     AudioCapture& _audioCapture;
     ProjectMWrapper& _projectMWrapper;

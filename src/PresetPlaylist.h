@@ -3,6 +3,7 @@
 #include <Poco/Exception.h>
 #include <Poco/Logger.h>
 
+#include <random>
 #include <string>
 #include <vector>
 
@@ -225,7 +226,7 @@ public:
     void LastInHistory(bool hardCut);
 
     /**
-     * Plays a random item in the playlist, regardless of shuffle.
+     * Plays a random item in the playlist, regardless of shuffle. Never picks the current item if there are others.
      * @param hardCut If true, do not use a smooth transition.
      */
     void Random(bool hardCut);
@@ -331,6 +332,13 @@ private:
     static void PresetSwitchFailedEvent(const char* presetFilename, const char* message, void* context);
 
     /**
+     * @brief projectM callback. Called when projectM wants the next preset (display duration over or hard cut).
+     * @param isHardCut True if a hard cut was requested.
+     * @param context Callback context, e.g. "this" pointer.
+     */
+    static void PresetSwitchRequestedEvent(bool isHardCut, void* context);
+
+    /**
      * Sends a notification that the playlist has changed.
      */
     void SendPlaylistChangedNotification() const;
@@ -342,6 +350,8 @@ private:
     bool _shuffle{false}; //!< Shuffle enabled
     bool _isBatchEditing{false}; //!< Flag determining if the playlist is being batch-edited.
     bool _presetSwitchResolved{false}; //!< True once the current preset switch (incl. retries) has a result, see BeginPresetSwitch().
+
+    std::mt19937 _randomGenerator{std::random_device{}()}; //!< For picking random presets.
 
     Poco::Logger& _logger{Poco::Logger::get("PresetPlaylist")}; //!< The class logger.
 };

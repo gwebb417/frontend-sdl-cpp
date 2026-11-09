@@ -11,6 +11,7 @@
 #include "notifications/UpdateWindowTitle.h"
 
 #include <projectM-4/playlist.h>
+#include <projectM-4/projectM.h>
 
 #include <Poco/NotificationCenter.h>
 #include <Poco/Path.h>
@@ -52,6 +53,13 @@ PresetPlaylist::~PresetPlaylist()
 void PresetPlaylist::Connect(projectm* projectMHandle)
 {
     projectm_playlist_connect(_projectMPlaylist, projectMHandle);
+
+    if (projectMHandle)
+    {
+        // Handle automatic preset switches (display duration, hard cuts) here instead of in the playlist
+        // library, so shuffle never picks the preset that is already playing (see Random()).
+        projectm_set_preset_switch_requested_event_callback(projectMHandle, &PresetPlaylist::PresetSwitchRequestedEvent, this);
+    }
 }
 
 void PresetPlaylist::Disconnect()
@@ -118,10 +126,56 @@ void PresetPlaylist::LastInHistory(bool hardCut)
 void PresetPlaylist::Random(bool hardCut)
 {
     poco_assert(_projectMPlaylist);
-    projectm_playlist_set_shuffle(_projectMPlaylist, true);
+
+    auto size = projectm_playlist_size(_projectMPlaylist);
+    if (size < 2)
+    {
+        // Nothing else to choose from.
+        projectm_playlist_set_shuffle(_projectMPlaylist, true);
+        BeginPresetSwitch();
+        projectm_playlist_play_next(_projectMPlaylist, hardCut);
+        projectm_playlist_set_shuffle(_projectMPlaylist, _shuffle);
+        return;
+    }
+
+    // The playlist library's shuffle picks from all presets, including the current one, so with only a
+    // few presets (e.g. favorites) it often "switched" to the same preset again. Pick any other preset.
+    auto current = projectm_playlist_get_position(_projectMPlaylist);
+    std::uniform_int_distribution<uint32_t> distribution(0, size - 2);
+    uint32_t index = distribution(_randomGenerator);
+    if (index >= current)
+    {
+        index++;
+    }
+
     BeginPresetSwitch();
-    projectm_playlist_play_next(_projectMPlaylist, hardCut);
-    projectm_playlist_set_shuffle(_projectMPlaylist, _shuffle);
+    projectm_playlist_set_position(_projectMPlaylist, index, hardCut);
+}
+
+void PresetPlaylist::PresetSwitchRequestedEvent(bool isHardCut, void* context)
+{
+    auto* that = reinterpret_cast<PresetPlaylist*>(context);
+    if (!that || !that->_projectMPlaylist)
+    {
+        return;
+    }
+
+    try
+    {
+        if (that->_shuffle)
+        {
+            that->Random(isHardCut);
+        }
+        else
+        {
+            that->BeginPresetSwitch();
+            projectm_playlist_play_next(that->_projectMPlaylist, isHardCut);
+        }
+    }
+    catch (...)
+    {
+        // Never let an exception escape into libprojectM.
+    }
 }
 
 void PresetPlaylist::BeginBatchEdit()

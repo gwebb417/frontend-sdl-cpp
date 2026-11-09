@@ -526,6 +526,23 @@ void SDLRenderingWindow::DumpOpenGLInfo()
     poco_debug_f1(_logger, "- GL_VENDOR: %s", std::string(reinterpret_cast<const char*>(glGetString(GL_VENDOR))));
 }
 
+int SDLRenderingWindow::RefreshRate() const
+{
+    if (!_renderingWindow)
+    {
+        return 0;
+    }
+
+    auto displayIndex = SDL_GetWindowDisplayIndex(_renderingWindow);
+    SDL_DisplayMode mode{};
+    if (displayIndex < 0 || SDL_GetCurrentDisplayMode(displayIndex, &mode) != 0)
+    {
+        return 0;
+    }
+
+    return mode.refresh_rate;
+}
+
 int SDLRenderingWindow::GetCurrentDisplay()
 {
     int left;
@@ -628,6 +645,7 @@ void SDLRenderingWindow::UpdateSwapInterval()
     if (!_config->getBool("waitForVerticalSync", true))
     {
         SDL_GL_SetSwapInterval(0);
+        poco_information(_logger, "Vertical sync: off.");
         return;
     }
 
@@ -635,11 +653,21 @@ void SDLRenderingWindow::UpdateSwapInterval()
     {
         if (SDL_GL_SetSwapInterval(-1) == 0)
         {
+            poco_information(_logger, "Vertical sync: adaptive.");
             return;
         }
+        poco_information_f1(_logger, "Adaptive vertical sync is not supported by the graphics driver (%s), using normal vertical sync.",
+                            std::string(SDL_GetError()));
     }
 
-    SDL_GL_SetSwapInterval(1);
+    if (SDL_GL_SetSwapInterval(1) == 0)
+    {
+        poco_information(_logger, "Vertical sync: on.");
+    }
+    else
+    {
+        poco_warning_f1(_logger, "Could not enable vertical sync: %s", std::string(SDL_GetError()));
+    }
 }
 
 void SDLRenderingWindow::OnConfigurationPropertyChanged(const Poco::Util::AbstractConfiguration::KeyValue& property)

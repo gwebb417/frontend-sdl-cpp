@@ -121,13 +121,21 @@ void MainMenu::Draw()
 
             ImGui::Separator();
 
-            float beatSensitivity = projectm_get_beat_sensitivity(_projectMWrapper.ProjectM());
-            // Type-in box with Apply button instead of a slider, see NumberInput.h.
+            const bool beatAveraging = _projectMWrapper.BeatAveragingEnabled();
+            if (ImGui::MenuItem("Beat Averaging", "", beatAveraging))
+            {
+                // The configuration change applies it (ProjectMWrapper::OnConfigurationPropertyChanged()).
+                app.UserConfiguration()->setBool("projectM.beatAveraging", !beatAveraging);
+            }
+
+            // Not used while beat averaging is on. Type-in box with Apply button instead of a slider, see NumberInput.h.
+            ImGui::BeginDisabled(beatAveraging);
+            float beatSensitivity = _projectMWrapper.BeatSensitivity();
             if (NumberInput::Float("##beat_sensitivity", &beatSensitivity, 0.0f, 2.0f, "Beat Sensitivity"))
             {
-                projectm_set_beat_sensitivity(_projectMWrapper.ProjectM(), beatSensitivity);
                 app.UserConfiguration()->setDouble("projectM.beatSensitivity", beatSensitivity);
             }
+            ImGui::EndDisabled();
 
             ImGui::EndMenu();
         }
