@@ -5,6 +5,7 @@ This is an unofficial fork, not an official projectM release.
 
 ## Download
 
+The current version is **v1.3** ([release page](https://github.com/gwebb417/frontend-sdl-cpp/releases/tag/fork-v1.3)).
 Both downloads are on the [latest release](https://github.com/gwebb417/frontend-sdl-cpp/releases/latest) page. They
 already include the presets and textures (see [Presets and textures](#presets-and-textures)) and run in
 [portable mode](#new-features), so settings and favorites are kept in the unpacked folder.
@@ -17,6 +18,23 @@ exe with no DLLs or installation needed. If Windows shows "Windows protected you
 unpacked folder. It needs glibc 2.35 or newer (e.g. Ubuntu 22.04+, Debian 12, Fedora 36+, Arch) plus SDL2 and
 FreeType, which almost every desktop Linux already has. The included `README.txt` lists the install commands in case
 they're missing.
+
+**Updating from an earlier version:** unpack the new version, then copy the `userdata` folder from your old folder
+into the new one (or just replace `projectMSDL.exe` / `projectMSDL` in your old folder). Settings, favorites and
+disabled presets carry over.
+
+## What's new in v1.3
+
+- **Disable presets you don't like** with DEL, and look at them again later with CTRL-DEL (see
+  [Disabled presets](#disabled-presets)).
+- **Beat Sensitivity really works now** and no longer fades after a few seconds; **Beat Averaging** gives the standard
+  Milkdrop reaction instead.
+- **FPS counter** with optional frame times, and **toasts** in any corner or the center.
+- **ENTER opens the preset search** (instead of M).
+- Fixes: R and automatic switching no longer repeat the current preset, exact FPS limit, command-line options work on
+  Windows, presets keep changing with a Transition Duration of 0, the preset search fits small windows.
+
+All features of this fork are listed below.
 
 ## What's different in this fork
 
