@@ -90,9 +90,12 @@ jobs:
           path: frontend-sdl2
           submodules: recursive
 
-      # Same patch as the Windows build (vcpkg overlay port): makes projectm_set_beat_sensitivity() work.
+      # Same patches as the Windows build (vcpkg overlay port, same order): beat sensitivity, animation speed, band sensitivity.
       - name: Patch libprojectM
-        run: git -C projectm apply --verbose "$GITHUB_WORKSPACE/frontend-sdl2/vcpkg-overlay/ports/projectm/beat-sensitivity.patch"
+        run: |
+          for patch in beat-sensitivity.patch animation-speed.patch band-sensitivity.patch; do
+            git -C projectm apply --verbose "$GITHUB_WORKSPACE/frontend-sdl2/vcpkg-overlay/ports/projectm/$patch"
+          done
 
       - name: Build libprojectM
         run: |

@@ -135,7 +135,56 @@ void MainMenu::Draw()
             {
                 app.UserConfiguration()->setDouble("projectM.beatSensitivity", beatSensitivity);
             }
+
+            // Per-band sensitivities multiply Beat Sensitivity, also not used while beat averaging is on.
+            struct BandSetting {
+                const char* id;
+                const char* key;
+                const char* label;
+            };
+            const BandSetting bands[]{{"##bass_sensitivity", "projectM.bassSensitivity", "Bass Sensitivity"},
+                                      {"##mid_sensitivity", "projectM.midSensitivity", "Mid Sensitivity"},
+                                      {"##treble_sensitivity", "projectM.trebleSensitivity", "Treble Sensitivity"}};
+            for (const auto& band : bands)
+            {
+                float value = static_cast<float>(app.config().getDouble(band.key, 1.0));
+                if (NumberInput::Float(band.id, &value, 0.0f, 2.0f, band.label))
+                {
+                    app.UserConfiguration()->setDouble(band.key, value);
+                }
+            }
             ImGui::EndDisabled();
+
+            if (ImGui::BeginMenu("Frequency Bands"))
+            {
+                const std::pair<const char*, const char*> rangeChoices[]{
+                    {ProjectMWrapper::BandRangesMusic, "Music (bass 20-250 Hz, mid 250-4000 Hz, treble 4000-20000 Hz)"},
+                    {ProjectMWrapper::BandRangesStandard, "Milkdrop Standard (bass 0-3675 Hz, mid 3675-7350 Hz, treble 7350-11025 Hz)"},
+                    {ProjectMWrapper::BandRangesCustom, "Custom (set in Settings > Audio)"}};
+                auto current = app.config().getString("projectM.bandRanges", ProjectMWrapper::BandRangesMusic);
+                for (const auto& choice : rangeChoices)
+                {
+                    if (ImGui::MenuItem(choice.second, "", current == choice.first))
+                    {
+                        app.UserConfiguration()->setString("projectM.bandRanges", choice.first);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            ImGui::Separator();
+
+            float ambientSpeed = _projectMWrapper.AmbientSpeed();
+            if (NumberInput::Float("##ambient_speed", &ambientSpeed, ProjectMWrapper::MinAmbientSpeed, 1.0f, "Ambient Speed (Left/Right)"))
+            {
+                app.UserConfiguration()->setDouble("projectM.ambientSpeed", ambientSpeed);
+            }
+
+            const bool fpsIndependentMotion = app.config().getBool("projectM.fpsIndependentMotion", true);
+            if (ImGui::MenuItem("Same Speed at Any FPS", "", fpsIndependentMotion))
+            {
+                app.UserConfiguration()->setBool("projectM.fpsIndependentMotion", !fpsIndependentMotion);
+            }
 
             ImGui::EndMenu();
         }

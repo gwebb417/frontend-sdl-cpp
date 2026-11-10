@@ -1,0 +1,323 @@
+diff --git a/src/api/include/projectM-4/parameters.h b/src/api/include/projectM-4/parameters.h
+index 2d9c70c..b9cb172 100644
+--- a/src/api/include/projectM-4/parameters.h
++++ b/src/api/include/projectM-4/parameters.h
+@@ -62,6 +62,37 @@ PROJECTM_EXPORT void projectm_set_beat_sensitivity(projectm_handle instance, flo
+  */
+ PROJECTM_EXPORT float projectm_get_beat_sensitivity(projectm_handle instance);
+ 
++/**
++ * @brief Sets the preset animation speed (projectMSDL fork patch).
++ *
++ * Slows down or speeds up everything a preset animates: the "time" variable, audio value smoothing and the
++ * per-frame motion (zoom, rotation, warp, translation, stretch) and decay. Preset display, transition and
++ * hard cut durations keep using real seconds.
++ *
++ * @param instance The projectM instance handle.
++ * @param speed 1.0 = normal speed, 0.5 = half speed. Clamped to 0.0 - 4.0.
++ */
++PROJECTM_EXPORT void projectm_set_animation_speed(projectm_handle instance, float speed);
++
++/**
++ * @brief Returns the preset animation speed (projectMSDL fork patch).
++ * @param instance The projectM instance handle.
++ * @return The animation speed.
++ */
++PROJECTM_EXPORT float projectm_get_animation_speed(projectm_handle instance);
++
++/**
++ * @brief Makes per-frame preset motion independent of the frame rate (projectMSDL fork patch).
++ *
++ * Milkdrop presets apply their zoom, rotation, warp, translation, stretch and decay once per frame, so they
++ * move faster at higher frame rates. With a reference FPS, the motion runs at the speed it has at that frame
++ * rate, regardless of the actual frame rate.
++ *
++ * @param instance The projectM instance handle.
++ * @param fps The reference frame rate, e.g. 60. 0 = stock behavior (motion per frame).
++ */
++PROJECTM_EXPORT void projectm_set_motion_reference_fps(projectm_handle instance, float fps);
++
+ /**
+  * @brief Sets the minimum display time before a hard cut can happen.
+  *
+diff --git a/src/libprojectM/MilkdropPreset/PerPixelMesh.cpp b/src/libprojectM/MilkdropPreset/PerPixelMesh.cpp
+index d1f0314..e771396 100644
+--- a/src/libprojectM/MilkdropPreset/PerPixelMesh.cpp
++++ b/src/libprojectM/MilkdropPreset/PerPixelMesh.cpp
+@@ -306,6 +306,14 @@ void PerPixelMesh::WarpedBlit(const PresetState& presetState,
+     // Decay
+     float decay = std::min(static_cast<float>(*perFrameContext.decay), 1.0f);
+ 
++    // projectMSDL fork patch: per-frame motion and decay follow the animation speed / frame rate.
++    // Decay is a per-frame factor, so the matching share of it is decay^motionScale.
++    float const motionScale = presetState.renderContext.motionScale;
++    if (motionScale != 1.0f && decay > 0.0f)
++    {
++        decay = std::pow(decay, motionScale);
++    }
++
+     // No blending between presets here, so we make sure blending is disabled.
+     glDisable(GL_BLEND);
+ 
+@@ -322,6 +330,7 @@ void PerPixelMesh::WarpedBlit(const PresetState& presetState,
+         m_perPixelMeshShader.SetUniformFloat("warpScaleInverse", warpScaleInverse);
+         m_perPixelMeshShader.SetUniformFloat4("warpFactors", warpFactors);
+         m_perPixelMeshShader.SetUniformFloat("decay", decay);
++        m_perPixelMeshShader.SetUniformFloat("motionScale", motionScale);
+     }
+     else
+     {
+@@ -335,6 +344,7 @@ void PerPixelMesh::WarpedBlit(const PresetState& presetState,
+         shader.SetUniformFloat("warpScaleInverse", warpScaleInverse);
+         shader.SetUniformFloat4("warpFactors", warpFactors);
+         shader.SetUniformFloat("decay", decay);
++        shader.SetUniformFloat("motionScale", motionScale);
+     }
+ 
+     assert(!presetState.mainTexture.expired());
+diff --git a/src/libprojectM/MilkdropPreset/Shaders/PresetWarpVertexShaderGlsl330.vert b/src/libprojectM/MilkdropPreset/Shaders/PresetWarpVertexShaderGlsl330.vert
+index c631fcb..263d12b 100644
+--- a/src/libprojectM/MilkdropPreset/Shaders/PresetWarpVertexShaderGlsl330.vert
++++ b/src/libprojectM/MilkdropPreset/Shaders/PresetWarpVertexShaderGlsl330.vert
+@@ -26,6 +26,7 @@ uniform float warpTime;
+ uniform float warpScaleInverse;
+ uniform vec4 warpFactors;
+ uniform float decay;
++uniform float motionScale; // projectMSDL fork patch: share of the per-frame motion to apply (1.0 = stock).
+ 
+ out vec4 frag_COLOR;
+ out vec4 frag_TEXCOORD0;
+@@ -73,7 +74,9 @@ void main() {
+     v = (v - 0.5) * invAspectY + 0.5;
+ 
+     frag_COLOR = vec4(decay, decay, decay, 1.0);
+-    frag_TEXCOORD0.xy = vec2(u, v);
++    // Apply only part of this frame's motion (or more of it), so slower animation / higher FPS move
++    // the picture by a matching smaller step per frame. motionScale 1.0 gives exactly the stock result.
++    frag_TEXCOORD0.xy = uv_original + (vec2(u, v) - uv_original) * motionScale;
+     frag_TEXCOORD0.zw = uv_original;
+     frag_TEXCOORD1 = rad_ang;
+ }
+diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+index 34c3630..1e7cab5 100644
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -99,10 +99,14 @@ void ProjectM::RenderFrame()
+     }
+ 
+     // Update FPS and other timer values.
++    m_timeKeeper->SetAnimationSpeed(m_animationSpeed);
++    m_timeKeeper->SetMotionReferenceFps(m_motionReferenceFps);
+     m_timeKeeper->UpdateTimers();
+ 
+-    // Update and retrieve audio data
+-    m_audioStorage.UpdateFrameAudioData(m_timeKeeper->SecondsSinceLastFrame(), m_frameCount);
++    // Update and retrieve audio data.
++    // Animation seconds instead of real seconds (projectMSDL fork patch), so the audio value smoothing
++    // follows the animation speed. Identical at speed 1.
++    m_audioStorage.UpdateFrameAudioData(m_timeKeeper->AnimationSecondsSinceLastFrame(), m_frameCount);
+     auto audioData = m_audioStorage.GetFrameAudioData();
+ 
+     // Beat sensitivity (patch from the projectMSDL fork): libprojectM 4.1 stores this setting but never used it.
+@@ -320,6 +324,21 @@ auto ProjectM::GetBeatSensitivity() const -> float
+     return m_beatSensitivity;
+ }
+ 
++void ProjectM::SetAnimationSpeed(float speed)
++{
++    m_animationSpeed = std::min(std::max(0.0f, speed), 4.0f);
++}
++
++auto ProjectM::AnimationSpeed() const -> float
++{
++    return m_animationSpeed;
++}
++
++void ProjectM::SetMotionReferenceFps(float fps)
++{
++    m_motionReferenceFps = std::max(0.0f, fps);
++}
++
+ auto ProjectM::SoftCutDuration() const -> double
+ {
+     return m_softCutDuration;
+@@ -460,8 +479,10 @@ auto ProjectM::GetRenderContext() -> Renderer::RenderContext
+     Renderer::RenderContext ctx{};
+     ctx.viewportSizeX = m_windowWidth;
+     ctx.viewportSizeY = m_windowHeight;
+-    ctx.time = static_cast<float>(m_timeKeeper->GetRunningTime());
++    // Animation time instead of real time (projectMSDL fork patch). Identical at speed 1.
++    ctx.time = static_cast<float>(m_timeKeeper->AnimationTime());
+     ctx.progress = static_cast<float>(m_timeKeeper->PresetProgressA());
++    ctx.motionScale = static_cast<float>(m_timeKeeper->MotionScale());
+     ctx.fps = static_cast<float>(m_targetFps);
+     ctx.frame = m_frameCount;
+     ctx.aspectX = (m_windowHeight > m_windowWidth) ? static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight) : 1.0f;
+diff --git a/src/libprojectM/ProjectM.hpp b/src/libprojectM/ProjectM.hpp
+index b84e293..b7915d5 100644
+--- a/src/libprojectM/ProjectM.hpp
++++ b/src/libprojectM/ProjectM.hpp
+@@ -107,6 +107,12 @@ public:
+ 
+     auto GetBeatSensitivity() const -> float;
+ 
++    void SetAnimationSpeed(float speed);
++
++    auto AnimationSpeed() const -> float;
++
++    void SetMotionReferenceFps(float fps);
++
+     auto SoftCutDuration() const -> double;
+ 
+     void SetSoftCutDuration(double seconds);
+@@ -195,6 +201,8 @@ private:
+     bool m_hardCutEnabled{false};    //!< If true, hard cuts based on beat detection are enabled.
+     float m_hardCutSensitivity{2.0}; //!< Loudness sensitivity value for hard cuts.
+     float m_beatSensitivity{1.0};    //!< General beat sensitivity modifier for presets.
++    float m_animationSpeed{1.0};     //!< Preset animation speed (projectMSDL fork patch).
++    float m_motionReferenceFps{0.0}; //!< FPS at which per-frame motion runs at normal speed, 0 = per frame (projectMSDL fork patch).
+     bool m_aspectCorrection{true};   //!< If true, corrects aspect ratio for non-rectangular windows.
+     float m_easterEgg{1.0};          //!< Random preset duration modifier. See TimeKeeper class.
+     float m_previousFrameVolume{};   //!< Volume in previous frame, used for hard cuts.
+diff --git a/src/libprojectM/ProjectMCWrapper.cpp b/src/libprojectM/ProjectMCWrapper.cpp
+index cbf5f6e..1a940ed 100644
+--- a/src/libprojectM/ProjectMCWrapper.cpp
++++ b/src/libprojectM/ProjectMCWrapper.cpp
+@@ -183,6 +183,24 @@ float projectm_get_beat_sensitivity(projectm_handle instance)
+     return projectMInstance->GetBeatSensitivity();
+ }
+ 
++void projectm_set_animation_speed(projectm_handle instance, float speed)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    projectMInstance->SetAnimationSpeed(speed);
++}
++
++float projectm_get_animation_speed(projectm_handle instance)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    return projectMInstance->AnimationSpeed();
++}
++
++void projectm_set_motion_reference_fps(projectm_handle instance, float fps)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    projectMInstance->SetMotionReferenceFps(fps);
++}
++
+ double projectm_get_hard_cut_duration(projectm_handle instance)
+ {
+     auto projectMInstance = handle_to_instance(instance);
+diff --git a/src/libprojectM/Renderer/RenderContext.hpp b/src/libprojectM/Renderer/RenderContext.hpp
+index a5a1f9c..1d7554c 100644
+--- a/src/libprojectM/Renderer/RenderContext.hpp
++++ b/src/libprojectM/Renderer/RenderContext.hpp
+@@ -19,6 +19,7 @@ public:
+     int frame{0};          //!< Frames rendered so far.
+     float fps{0.0f};       //!< Frames per second.
+     float progress{0.0f};  //!< Preset progress.
++    float motionScale{1.0f}; //!< Share of the per-frame motion/decay to apply this frame (projectMSDL fork patch).
+     int viewportSizeX{0};  //!< Horizontal viewport size in pixels
+     int viewportSizeY{0};  //!< Vertical viewport size in pixels
+     float aspectX{1.0};    //!< X aspect ratio.
+diff --git a/src/libprojectM/TimeKeeper.cpp b/src/libprojectM/TimeKeeper.cpp
+index 612b0ab..d10509d 100644
+--- a/src/libprojectM/TimeKeeper.cpp
++++ b/src/libprojectM/TimeKeeper.cpp
+@@ -23,6 +23,33 @@ void TimeKeeper::UpdateTimers()
+     m_currentTime = currentFrameTime;
+     m_presetFrameA++;
+     m_presetFrameB++;
++
++    m_animationSecondsSinceLastFrame = m_secondsSinceLastFrame * m_animationSpeed;
++    m_animationTime += m_animationSecondsSinceLastFrame;
++
++    // Smooth the frame time a little so normal frame-to-frame jitter doesn't make the motion uneven,
++    // and limit it so a stall (e.g. while dragging the window) doesn't cause a big jump.
++    double frameSeconds = std::min(std::max(m_secondsSinceLastFrame, 0.0), 0.25);
++    if (m_smoothedFrameSeconds <= 0.0)
++    {
++        m_smoothedFrameSeconds = frameSeconds;
++    }
++    else
++    {
++        m_smoothedFrameSeconds += (frameSeconds - m_smoothedFrameSeconds) * 0.1;
++    }
++
++    double frameShare = 1.0;
++    if (m_motionReferenceFps > 0.0 && m_smoothedFrameSeconds > 0.0)
++    {
++        frameShare = std::min(std::max(m_smoothedFrameSeconds * m_motionReferenceFps, 0.05), 4.0);
++    }
++    m_motionScale = frameShare * m_animationSpeed;
++}
++
++void TimeKeeper::SetAnimationSpeed(double speed)
++{
++    m_animationSpeed = std::min(std::max(speed, 0.0), 4.0);
+ }
+ 
+ void TimeKeeper::StartPreset()
+diff --git a/src/libprojectM/TimeKeeper.hpp b/src/libprojectM/TimeKeeper.hpp
+index 23d17df..aceb0c5 100644
+--- a/src/libprojectM/TimeKeeper.hpp
++++ b/src/libprojectM/TimeKeeper.hpp
+@@ -86,6 +86,44 @@ public:
+         return m_secondsSinceLastFrame;
+     }
+ 
++    // Animation speed (patch from the projectMSDL fork).
++    // Preset animation runs on its own clock that advances by (real seconds * speed) each frame.
++    // Preset display, transition and hard cut durations keep using real seconds.
++    void SetAnimationSpeed(double speed);
++
++    inline auto AnimationSpeed() const -> double
++    {
++        return m_animationSpeed;
++    }
++
++    //! Animation time in seconds (the preset "time" variable).
++    inline auto AnimationTime() const -> double
++    {
++        return m_animationTime;
++    }
++
++    //! Animation seconds passed since the last frame (real seconds * speed).
++    inline auto AnimationSecondsSinceLastFrame() const -> double
++    {
++        return m_animationSecondsSinceLastFrame;
++    }
++
++    /**
++     * Sets the frame rate at which per-frame preset motion (zoom, rotation, warp, decay, ...) runs at its
++     * normal speed. Milkdrop applies this motion once per frame, so it normally runs faster at higher FPS.
++     * With a reference FPS, each frame applies only its share of the motion. 0 = stock per-frame behavior.
++     */
++    inline void SetMotionReferenceFps(double fps)
++    {
++        m_motionReferenceFps = fps;
++    }
++
++    //! How much of the per-frame motion to apply this frame (1.0 = stock).
++    inline auto MotionScale() const -> double
++    {
++        return m_motionScale;
++    }
++
+ private:
+     /* The first ticks value of the application */
+     std::chrono::high_resolution_clock::time_point m_startTime{std::chrono::high_resolution_clock::now()};
+@@ -95,6 +133,13 @@ private:
+ 
+     double m_secondsSinceLastFrame{};
+ 
++    double m_animationSpeed{1.0};
++    double m_animationTime{};
++    double m_animationSecondsSinceLastFrame{};
++    double m_motionReferenceFps{};
++    double m_smoothedFrameSeconds{};
++    double m_motionScale{1.0};
++
+     double m_easterEgg{};
+ 
+     double m_presetDuration{};

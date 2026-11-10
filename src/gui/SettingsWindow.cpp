@@ -2,6 +2,7 @@
 
 #include "AudioCapture.h"
 #include "ProjectMSDLApplication.h"
+#include "ProjectMWrapper.h"
 #include "SDLRenderingWindow.h"
 
 #include "ProjectMGUI.h"
@@ -201,6 +202,21 @@ void SettingsWindow::DrawProjectMSettingsTab()
             LabelWithTooltip("Preset Transition Duration",
                              "Time in seconds it takes to transition softly from one preset to another.");
             DoubleSetting("projectM.transitionDuration", 3.0, .0, 10.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Ambient Speed",
+                             "Slows down all preset animation evenly: motion, zoom, rotation, warp,\n"
+                             "fading trails and the reaction to the music.\n"
+                             "1 = normal speed, 0.5 = half speed, 0.1 = slowest. Left/Right arrow keys change it too.\n"
+                             "Display and transition durations stay in real seconds.");
+            DoubleSetting("projectM.ambientSpeed", 1.0, 0.1, 1.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Same Speed at Any FPS",
+                             "Presets move as fast at any FPS as they do at 60 FPS.\n"
+                             "Off: presets move faster at higher FPS and slower at lower FPS,\n"
+                             "like in Milkdrop and the official projectM.");
+            BooleanSetting("projectM.fpsIndependentMotion", true);
 
             ImGui::TableNextRow();
             LabelWithTooltip("Enable Hard Cuts",
@@ -408,8 +424,9 @@ void SettingsWindow::DrawAudioSettingsTab()
             LabelWithTooltip("Beat Averaging",
                              "On: presets react to the music the standard Milkdrop way. The beat is compared with the last few\n"
                              "seconds of music, so quiet and loud songs get about the same amount of movement.\n"
-                             "Beat Sensitivity is not used then (greyed out), and the Up/Down arrow keys don't change it.\n"
-                             "Off: Beat Sensitivity sets how strongly presets react.");
+                             "Beat Sensitivity and the bass/mid/treble sensitivities are not used then (greyed out),\n"
+                             "and the Up/Down arrow keys don't change Beat Sensitivity.\n"
+                             "Off: the sensitivity settings set how strongly presets react.");
             BooleanSetting("projectM.beatAveraging", false);
 
             ImGui::TableNextRow();
@@ -418,6 +435,55 @@ void SettingsWindow::DrawAudioSettingsTab()
                              "How strongly presets react to the music: 0 = not at all, 1 = normal, 2 = twice as strong.\n"
                              "Up/Down arrow keys change it too. Not used while Beat Averaging is on.");
             DoubleSetting("projectM.beatSensitivity", 1.0, 0.0, 2.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("    Bass Sensitivity",
+                             "How strongly presets react to the bass, on top of Beat Sensitivity:\n"
+                             "0 = not at all, 1 = normal, 2 = twice as strong.");
+            DoubleSetting("projectM.bassSensitivity", 1.0, 0.0, 2.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("    Mid Sensitivity",
+                             "How strongly presets react to the mids, on top of Beat Sensitivity:\n"
+                             "0 = not at all, 1 = normal, 2 = twice as strong.");
+            DoubleSetting("projectM.midSensitivity", 1.0, 0.0, 2.0);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("    Treble Sensitivity",
+                             "How strongly presets react to the treble, on top of Beat Sensitivity:\n"
+                             "0 = not at all, 1 = normal, 2 = twice as strong.");
+            DoubleSetting("projectM.trebleSensitivity", 1.0, 0.0, 2.0);
+            ImGui::EndDisabled();
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Frequency Bands",
+                             "Which frequencies count as bass, mids and treble for the music reaction.\n"
+                             "Music: bass 20-250 Hz, mid 250-4000 Hz, treble 4000-20000 Hz.\n"
+                             "Milkdrop Standard: the split of Milkdrop and the official projectM, which only uses\n"
+                             "0-11025 Hz in three equal parts (bass 0-3675 Hz, mid 3675-7350 Hz, treble 7350-11025 Hz).\n"
+                             "Custom: the ranges below.\n"
+                             "The analyzer has a resolution of about 45 Hz, so very narrow ranges get rounded.");
+            ChoiceSetting("projectM.bandRanges", ProjectMWrapper::BandRangesMusic,
+                          {{ProjectMWrapper::BandRangesMusic, "Music"},
+                           {ProjectMWrapper::BandRangesStandard, "Milkdrop Standard"},
+                           {ProjectMWrapper::BandRangesCustom, "Custom"}});
+
+            ImGui::BeginDisabled(_effectiveConfiguration->getString("projectM.bandRanges", ProjectMWrapper::BandRangesMusic) != ProjectMWrapper::BandRangesCustom);
+            const struct {
+                const char* label;
+                const char* lowKey;
+                const char* highKey;
+                int low;
+                int high;
+            } bandRanges[]{{"  Bass From/To (Hz)", "projectM.bandBassLow", "projectM.bandBassHigh", 20, 250},
+                           {"  Mid From/To (Hz)", "projectM.bandMidLow", "projectM.bandMidHigh", 250, 4000},
+                           {"  Treble From/To (Hz)", "projectM.bandTrebleLow", "projectM.bandTrebleHigh", 4000, 20000}};
+            for (const auto& band : bandRanges)
+            {
+                ImGui::TableNextRow();
+                LabelWithTooltip(band.label, "Frequency range for Custom frequency bands, in Hz.");
+                IntegerSettingVec(band.lowKey, band.highKey, band.low, band.high, 0, 24000);
+            }
             ImGui::EndDisabled();
 
             ImGui::EndTable();

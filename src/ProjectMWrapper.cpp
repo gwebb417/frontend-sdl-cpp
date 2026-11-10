@@ -87,6 +87,8 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
         projectm_set_hard_cut_duration(_projectM, _projectMConfigView->getDouble("hardCutDuration", 20.0));
         projectm_set_hard_cut_sensitivity(_projectM, static_cast<float>(_projectMConfigView->getDouble("hardCutSensitivity", 1.0)));
         ApplyBeatSensitivity();
+        ApplyAnimationSpeed();
+        ApplyBandFrequencies();
 
         if (!texturePaths.empty())
         {
@@ -182,6 +184,12 @@ void ProjectMWrapper::RenderFrame()
         projectm_set_mesh_size(_projectM, _projectMConfigView->getInt("meshX", 96), _projectMConfigView->getInt("meshY", 54));
     }
 
+    // The capture device (and with it the sample rate) can change at any time.
+    if (Notification::AudioDataAvailable::SampleRate() != _bandFrequenciesSampleRate)
+    {
+        ApplyBandFrequencies();
+    }
+
     // Add new audio data to the instance from the staging buffer
     {
         Poco::ScopedLock lock(_audioBufferMutex);
@@ -238,6 +246,20 @@ void ProjectMWrapper::ApplyBeatSensitivity() const
     // With beat averaging on, presets react the standard Milkdrop way: the beat values are only compared
     // with their recent average (sensitivity 1), and the Beat Sensitivity setting isn't used.
     projectm_set_beat_sensitivity(_projectM, BeatAveragingEnabled() ? 1.0f : BeatSensitivity());
+
+    // Per-band sensitivity (our libprojectM patch band-sensitivity.patch) multiplies Beat Sensitivity.
+    // Beat Averaging also turns it off.
+    if (BeatAveragingEnabled())
+    {
+        projectm_set_band_sensitivity(_projectM, 1.0f, 1.0f, 1.0f);
+    }
+    else
+    {
+        auto band = [this](const char* key) {
+            return std::clamp(static_cast<float>(_projectMConfigView->getDouble(key, 1.0)), 0.0f, 2.0f);
+        };
+        projectm_set_band_sensitivity(_projectM, band("bassSensitivity"), band("midSensitivity"), band("trebleSensitivity"));
+    }
 }
 
 void ProjectMWrapper::ChangeBeatSensitivity(float value)
@@ -1197,8 +1219,68 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
     }
 
     // Previously only applied on startup, so changing it in the settings window had no visible effect.
-    if (key == "projectM.beatSensitivity" || key == "projectM.beatAveraging")
+    if (key == "projectM.beatSensitivity" || key == "projectM.beatAveraging" ||
+        key == "projectM.bassSensitivity" || key == "projectM.midSensitivity" || key == "projectM.trebleSensitivity")
     {
         ApplyBeatSensitivity();
     }
+
+    if (key == "projectM.ambientSpeed" || key == "projectM.fpsIndependentMotion")
+    {
+        ApplyAnimationSpeed();
+    }
+
+    if (key.rfind("projectM.band", 0) == 0)
+    {
+        ApplyBandFrequencies();
+    }
+}
+
+void ProjectMWrapper::ApplyBandFrequencies()
+{
+    // Uses our libprojectM patch (vcpkg-overlay/ports/projectm/band-sensitivity.patch).
+    _bandFrequenciesSampleRate = Notification::AudioDataAvailable::SampleRate();
+
+    auto ranges = _projectMConfigView->getString("bandRanges", BandRangesMusic);
+    if (ranges == BandRangesStandard)
+    {
+        // Stock libprojectM/Milkdrop split: the lower half of the spectrum in three equal parts.
+        projectm_set_band_frequencies(_projectM, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+
+    float hz[6]{20.0f, 250.0f, 250.0f, 4000.0f, 4000.0f, 20000.0f};
+    if (ranges == BandRangesCustom)
+    {
+        const char* keys[6]{"bandBassLow", "bandBassHigh", "bandMidLow", "bandMidHigh", "bandTrebleLow", "bandTrebleHigh"};
+        for (int i = 0; i < 6; i++)
+        {
+            hz[i] = std::clamp(static_cast<float>(_projectMConfigView->getDouble(keys[i], hz[i])), 0.0f, 24000.0f);
+        }
+    }
+
+    projectm_set_band_frequencies(_projectM, static_cast<float>(_bandFrequenciesSampleRate),
+                                  hz[0], hz[1], hz[2], hz[3], hz[4], hz[5]);
+}
+
+float ProjectMWrapper::AmbientSpeed() const
+{
+    return std::clamp(static_cast<float>(_projectMConfigView->getDouble("ambientSpeed", 1.0)), MinAmbientSpeed, 1.0f);
+}
+
+void ProjectMWrapper::ChangeAmbientSpeed(float value)
+{
+    // Stored like a change in the settings window; the configuration change applies it.
+    float newValue = std::clamp(std::round((AmbientSpeed() + value) * 100.0f) / 100.0f, MinAmbientSpeed, 1.0f);
+    _userConfig->setDouble("projectM.ambientSpeed", newValue);
+    Poco::NotificationCenter::defaultCenter().postNotification(
+        new Notification::DisplayToast(Poco::format("Ambient Speed: %.2hf", newValue)));
+}
+
+void ProjectMWrapper::ApplyAnimationSpeed()
+{
+    // Both use our libprojectM patch (vcpkg-overlay/ports/projectm/animation-speed.patch).
+    projectm_set_animation_speed(_projectM, AmbientSpeed());
+    // Presets move as fast at any FPS as they do at 60 FPS (Milkdrop applies motion per frame).
+    projectm_set_motion_reference_fps(_projectM, _projectMConfigView->getBool("fpsIndependentMotion", true) ? 60.0f : 0.0f);
 }

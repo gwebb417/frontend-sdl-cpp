@@ -3,6 +3,7 @@
 #include <Poco/Notification.h>
 #include <Poco/NotificationCenter.h>
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -27,6 +28,14 @@ public:
      * @return The audio data notification center.
      */
     static Poco::NotificationCenter& Center();
+
+    /**
+     * @brief Sample rate in Hz of the audio data currently being captured.
+     * Set by the capture implementation when it opens a device, read on the render thread
+     * to convert the band frequency ranges (Hz) to spectrum samples. 44100 until a device was opened.
+     * @return The sample rate value.
+     */
+    static std::atomic<uint32_t>& SampleRate();
 
     AudioDataAvailable() = delete;
 

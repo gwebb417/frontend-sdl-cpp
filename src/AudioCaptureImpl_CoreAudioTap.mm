@@ -234,6 +234,11 @@ bool CoreAudioTapCapture::StartTap()
                 return false;
             }
 
+            if (streamFormat.mSampleRate > 0.0)
+            {
+                Notification::AudioDataAvailable::SampleRate() = static_cast<uint32_t>(streamFormat.mSampleRate);
+            }
+
             poco_information_f2(_logger, "System audio tap running (%hu channels, %.0f Hz).",
                                 static_cast<unsigned short>(_channels), streamFormat.mSampleRate);
             return true;

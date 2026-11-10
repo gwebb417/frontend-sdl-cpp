@@ -177,6 +177,10 @@ bool AudioCaptureImpl::OpenAudioDevice()
     }
 
     _channels = actualSpecs.channels;
+    if (actualSpecs.freq > 0)
+    {
+        Notification::AudioDataAvailable::SampleRate() = static_cast<uint32_t>(actualSpecs.freq);
+    }
 
     poco_information_f4(_logger, R"(Opened audio recording device "%s" (ID %?d) with %?d channels at %?d Hz.)",
                         std::string(deviceName != nullptr ? deviceName : "System default capturing device"),

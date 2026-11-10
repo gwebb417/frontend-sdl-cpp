@@ -85,6 +85,33 @@ public:
      */
     void ApplyBeatSensitivity() const;
 
+    static constexpr float MinAmbientSpeed{0.1f}; //!< Slowest Ambient Speed.
+
+    /**
+     * @brief Returns the configured Ambient Speed (0.1 to 1, 1 = normal speed).
+     */
+    float AmbientSpeed() const;
+
+    /**
+     * @brief Passes Ambient Speed and the FPS-independent motion setting to projectM.
+     */
+    void ApplyAnimationSpeed();
+
+    /**
+     * @brief Changes Ambient Speed by the given value and shows it in a toast (Left/Right arrow keys).
+     * @param value A positive or negative delta value.
+     */
+    void ChangeAmbientSpeed(float value);
+
+    static constexpr const char* BandRangesStandard{"standard"}; //!< Stock Milkdrop band split.
+    static constexpr const char* BandRangesMusic{"music"};       //!< Bass 20-250 Hz, mid 250-4000 Hz, treble 4000-20000 Hz.
+    static constexpr const char* BandRangesCustom{"custom"};     //!< Frequency ranges from the bandBass*/bandMid*/bandTreble* settings.
+
+    /**
+     * @brief Passes the bass/mid/treble frequency ranges for the current capture sample rate to projectM.
+     */
+    void ApplyBandFrequencies();
+
     /**
      * @brief Returns the libprojectM version this application was built against.
      * @return A string with the libprojectM build version.
@@ -290,6 +317,7 @@ private:
     std::unique_ptr<PresetPlaylist> _playlist; //!< The currently active playlist.
 
     uint32_t _audioChannels{0}; //!< Number of audio channels of the current capture device.
+    uint32_t _bandFrequenciesSampleRate{0}; //!< Sample rate the band frequency ranges were last applied for.
     std::vector<float> _audioStagingBuffer; //!< Buffer which receives audio data from the capture implementation.
     mutable Poco::Mutex _audioBufferMutex; //!< Mutex protecting access to the audio staging buffer.
 

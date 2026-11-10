@@ -261,6 +261,8 @@ bool AudioCaptureImpl::OpenAudioDevice(IMMDevice* device, bool useLoopback)
     }
 
     _channels = pwfx->nChannels;
+    // Loopback capture delivers the mix format's rate (often 48000 Hz), not resampled.
+    Notification::AudioDataAvailable::SampleRate() = pwfx->nSamplesPerSec;
 
     // Can't use event-driven processing in loopback mode, but as we
     // get a "fill buffer" request before rendering each frame, this isn't

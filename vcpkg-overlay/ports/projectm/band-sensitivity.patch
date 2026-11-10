@@ -1,0 +1,282 @@
+diff --git a/src/api/include/projectM-4/parameters.h b/src/api/include/projectM-4/parameters.h
+index b9cb172..af5f4a8 100644
+--- a/src/api/include/projectM-4/parameters.h
++++ b/src/api/include/projectM-4/parameters.h
+@@ -62,6 +62,34 @@ PROJECTM_EXPORT void projectm_set_beat_sensitivity(projectm_handle instance, flo
+  */
+ PROJECTM_EXPORT float projectm_get_beat_sensitivity(projectm_handle instance);
+ 
++/**
++ * @brief Sets separate sensitivities for the bass, mid and treble bands (projectMSDL fork patch).
++ *
++ * Each value multiplies the beat sensitivity for its band: 0 = no reaction to that band, 1 = normal,
++ * 2 = twice as strong. vol/vol_att follow from the three bands.
++ *
++ * @param instance The projectM instance handle.
++ * @param bass Bass sensitivity, 0.0 - 2.0.
++ * @param mid Mid sensitivity, 0.0 - 2.0.
++ * @param treble Treble sensitivity, 0.0 - 2.0.
++ */
++PROJECTM_EXPORT void projectm_set_band_sensitivity(projectm_handle instance, float bass, float mid, float treble);
++
++/**
++ * @brief Sets the frequency ranges of the bass, mid and treble bands (projectMSDL fork patch).
++ *
++ * Stock libprojectM splits only the lower half of the spectrum into three equal parts
++ * (at 44.1 kHz: bass 0-3675 Hz, mid 3675-7350 Hz, treble 7350-11025 Hz).
++ * The spectrum has a resolution of about sample_rate / 1024 Hz (43 Hz at 44.1 kHz).
++ *
++ * @param instance The projectM instance handle.
++ * @param sample_rate Sample rate of the audio data passed in, in Hz. 0 = stock ranges, other values ignored.
++ */
++PROJECTM_EXPORT void projectm_set_band_frequencies(projectm_handle instance, float sample_rate,
++                                                   float bass_low, float bass_high,
++                                                   float mid_low, float mid_high,
++                                                   float treble_low, float treble_high);
++
+ /**
+  * @brief Sets the preset animation speed (projectMSDL fork patch).
+  *
+diff --git a/src/libprojectM/Audio/Loudness.cpp b/src/libprojectM/Audio/Loudness.cpp
+index 2139c92..7bbb2eb 100644
+--- a/src/libprojectM/Audio/Loudness.cpp
++++ b/src/libprojectM/Audio/Loudness.cpp
+@@ -1,5 +1,6 @@
+ #include "Loudness.hpp"
+ 
++#include <algorithm>
+ #include <cmath>
+ 
+ namespace libprojectM {
+@@ -8,6 +9,21 @@ namespace Audio {
+ Loudness::Loudness(Loudness::Band band)
+     : m_band(band)
+ {
++    SetBinRange(0, 0);
++}
++
++void Loudness::SetBinRange(int startBin, int endBin)
++{
++    startBin = std::min(std::max(startBin, 0), SpectrumSamples - 1);
++    endBin = std::min(endBin, SpectrumSamples);
++    if (endBin <= startBin)
++    {
++        // Stock: each band is one third of the lower half of the spectrum.
++        startBin = SpectrumSamples * static_cast<int>(m_band) / 6;
++        endBin = SpectrumSamples * (static_cast<int>(m_band) + 1) / 6;
++    }
++    m_startBin = startBin;
++    m_endBin = endBin;
+ }
+ 
+ void Loudness::Update(const std::array<float, SpectrumSamples>& spectrumSamples, double secondsSinceLastFrame, uint32_t frame)
+@@ -28,8 +44,8 @@ auto Loudness::AverageRelative() const -> float
+ 
+ void Loudness::SumBand(const std::array<float, SpectrumSamples>& spectrumSamples)
+ {
+-    int start = SpectrumSamples * static_cast<int>(m_band) / 6;
+-    int end = SpectrumSamples * (static_cast<int>(m_band) + 1) / 6;
++    int start = m_startBin;
++    int end = m_endBin;
+ 
+     m_current = 0.0f;
+     for (int sample = start; sample < end; sample++)
+diff --git a/src/libprojectM/Audio/Loudness.hpp b/src/libprojectM/Audio/Loudness.hpp
+index 55f3baf..9e05edc 100644
+--- a/src/libprojectM/Audio/Loudness.hpp
++++ b/src/libprojectM/Audio/Loudness.hpp
+@@ -61,6 +61,13 @@ public:
+      */
+     auto AverageRelative() const -> float;
+ 
++    /**
++     * @brief Sets the spectrum samples summed up for this band (projectMSDL fork patch).
++     * @param startBin First spectrum sample, inclusive.
++     * @param endBin Last spectrum sample, exclusive. If not larger than startBin, the stock range is used.
++     */
++    void SetBinRange(int startBin, int endBin);
++
+ private:
+     /**
+      * @brief Sums up the spectrum samples for the configured band.
+@@ -84,6 +91,8 @@ private:
+     static auto AdjustRateToFps(float rate, double secondsSinceLastFrame) -> float;
+ 
+     Band m_band{Band::Bass}; //!< The frequency band to use for this instance.
++    int m_startBin{};        //!< First summed spectrum sample (projectMSDL fork patch).
++    int m_endBin{};          //!< Last summed spectrum sample, exclusive (projectMSDL fork patch).
+ 
+     float m_current{};     //!< The current frame's sum of all frequency strengths in the current band.
+     float m_average{};     //!< The short-term averaged value of m_current.
+diff --git a/src/libprojectM/Audio/PCM.cpp b/src/libprojectM/Audio/PCM.cpp
+index 56a7cc6..3daa2f2 100755
+--- a/src/libprojectM/Audio/PCM.cpp
++++ b/src/libprojectM/Audio/PCM.cpp
+@@ -1,5 +1,8 @@
+ #include "PCM.hpp"
+ 
++#include <algorithm>
++#include <cmath>
++
+ namespace libprojectM {
+ namespace Audio {
+ 
+@@ -67,6 +70,26 @@ void PCM::UpdateFrameAudioData(double secondsSinceLastFrame, uint32_t frame)
+ 
+ }
+ 
++void PCM::SetBandFrequencies(float sampleRate, const float* hz)
++{
++    Loudness* bands[3]{&m_bass, &m_middles, &m_treble};
++    for (int band = 0; band < 3; band++)
++    {
++        if (sampleRate <= 0.0f || hz == nullptr)
++        {
++            bands[band]->SetBinRange(0, 0);
++            continue;
++        }
++
++        // The spectrum has SpectrumSamples bins from 0 Hz to half the sample rate.
++        // Bin 0 (constant offset) is never used, and each band gets at least one bin.
++        float const binsPerHz = static_cast<float>(SpectrumSamples * 2) / sampleRate;
++        int startBin = std::max(1, static_cast<int>(std::lround(hz[band * 2] * binsPerHz)));
++        int endBin = std::max(startBin + 1, static_cast<int>(std::lround(hz[band * 2 + 1] * binsPerHz)));
++        bands[band]->SetBinRange(startBin, std::min(endBin, SpectrumSamples));
++    }
++}
++
+ auto PCM::GetFrameAudioData() const -> FrameAudioData
+ {
+     FrameAudioData data{};
+diff --git a/src/libprojectM/Audio/PCM.hpp b/src/libprojectM/Audio/PCM.hpp
+index 602e249..2746e73 100755
+--- a/src/libprojectM/Audio/PCM.hpp
++++ b/src/libprojectM/Audio/PCM.hpp
+@@ -72,6 +72,13 @@ public:
+      */
+     PROJECTM_EXPORT auto GetFrameAudioData() const -> FrameAudioData;
+ 
++    /**
++     * @brief Sets the frequency ranges of the bass, mid and treble bands (projectMSDL fork patch).
++     * @param sampleRate Sample rate of the audio data in Hz. 0 or less = stock ranges.
++     * @param hz Six values: bass low/high, mid low/high, treble low/high in Hz.
++     */
++    PROJECTM_EXPORT void SetBandFrequencies(float sampleRate, const float* hz);
++
+ private:
+     template<
+         int signalAmplitude,
+diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+index 1e7cab5..1d31ba5 100644
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -113,19 +113,24 @@ void ProjectM::RenderFrame()
+     // bass/mid/treb/vol are relative to their long-term average (1.0 = average), so scaling the audio input
+     // has no lasting effect. Scale how far the values deviate from the average instead:
+     // 1 = unchanged, 0 = no reaction to the music, 2 = twice as strong.
+-    if (m_beatSensitivity != 1.0f)
++    // Per-band sensitivity (also projectMSDL fork patch) multiplies the beat sensitivity for each band.
++    // vol/vol_att are recalculated from the scaled bands, as libprojectM calculates them (PCM.cpp).
++    if (m_beatSensitivity != 1.0f || m_bassSensitivity != 1.0f || m_midSensitivity != 1.0f || m_trebleSensitivity != 1.0f)
+     {
+-        auto applySensitivity = [this](float value) {
+-            return std::max(0.0f, 1.0f + (value - 1.0f) * m_beatSensitivity);
++        auto applySensitivity = [](float value, float sensitivity) {
++            return std::max(0.0f, 1.0f + (value - 1.0f) * sensitivity);
+         };
+-        audioData.bass = applySensitivity(audioData.bass);
+-        audioData.bassAtt = applySensitivity(audioData.bassAtt);
+-        audioData.mid = applySensitivity(audioData.mid);
+-        audioData.midAtt = applySensitivity(audioData.midAtt);
+-        audioData.treb = applySensitivity(audioData.treb);
+-        audioData.trebAtt = applySensitivity(audioData.trebAtt);
+-        audioData.vol = applySensitivity(audioData.vol);
+-        audioData.volAtt = applySensitivity(audioData.volAtt);
++        float const bass = m_beatSensitivity * m_bassSensitivity;
++        float const mid = m_beatSensitivity * m_midSensitivity;
++        float const treble = m_beatSensitivity * m_trebleSensitivity;
++        audioData.bass = applySensitivity(audioData.bass, bass);
++        audioData.bassAtt = applySensitivity(audioData.bassAtt, bass);
++        audioData.mid = applySensitivity(audioData.mid, mid);
++        audioData.midAtt = applySensitivity(audioData.midAtt, mid);
++        audioData.treb = applySensitivity(audioData.treb, treble);
++        audioData.trebAtt = applySensitivity(audioData.trebAtt, treble);
++        audioData.vol = (audioData.bass + audioData.mid + audioData.treb) * 0.333f;
++        audioData.volAtt = (audioData.bassAtt + audioData.midAtt + audioData.trebAtt) * 0.333f;
+     }
+ 
+     // Check if the preset isn't locked, and we've not already notified the user
+@@ -324,6 +329,21 @@ auto ProjectM::GetBeatSensitivity() const -> float
+     return m_beatSensitivity;
+ }
+ 
++void ProjectM::SetBandSensitivity(float bass, float mid, float treble)
++{
++    auto clampSensitivity = [](float value) {
++        return std::min(std::max(0.0f, value), 2.0f);
++    };
++    m_bassSensitivity = clampSensitivity(bass);
++    m_midSensitivity = clampSensitivity(mid);
++    m_trebleSensitivity = clampSensitivity(treble);
++}
++
++void ProjectM::SetBandFrequencies(float sampleRate, const float* hz)
++{
++    m_audioStorage.SetBandFrequencies(sampleRate, hz);
++}
++
+ void ProjectM::SetAnimationSpeed(float speed)
+ {
+     m_animationSpeed = std::min(std::max(0.0f, speed), 4.0f);
+diff --git a/src/libprojectM/ProjectM.hpp b/src/libprojectM/ProjectM.hpp
+index b7915d5..a986ee9 100644
+--- a/src/libprojectM/ProjectM.hpp
++++ b/src/libprojectM/ProjectM.hpp
+@@ -107,6 +107,10 @@ public:
+ 
+     auto GetBeatSensitivity() const -> float;
+ 
++    void SetBandSensitivity(float bass, float mid, float treble);
++
++    void SetBandFrequencies(float sampleRate, const float* hz);
++
+     void SetAnimationSpeed(float speed);
+ 
+     auto AnimationSpeed() const -> float;
+@@ -201,6 +205,9 @@ private:
+     bool m_hardCutEnabled{false};    //!< If true, hard cuts based on beat detection are enabled.
+     float m_hardCutSensitivity{2.0}; //!< Loudness sensitivity value for hard cuts.
+     float m_beatSensitivity{1.0};    //!< General beat sensitivity modifier for presets.
++    float m_bassSensitivity{1.0};    //!< Bass sensitivity, multiplies m_beatSensitivity (projectMSDL fork patch).
++    float m_midSensitivity{1.0};     //!< Mid sensitivity, multiplies m_beatSensitivity (projectMSDL fork patch).
++    float m_trebleSensitivity{1.0};  //!< Treble sensitivity, multiplies m_beatSensitivity (projectMSDL fork patch).
+     float m_animationSpeed{1.0};     //!< Preset animation speed (projectMSDL fork patch).
+     float m_motionReferenceFps{0.0}; //!< FPS at which per-frame motion runs at normal speed, 0 = per frame (projectMSDL fork patch).
+     bool m_aspectCorrection{true};   //!< If true, corrects aspect ratio for non-rectangular windows.
+diff --git a/src/libprojectM/ProjectMCWrapper.cpp b/src/libprojectM/ProjectMCWrapper.cpp
+index 1a940ed..50b0e56 100644
+--- a/src/libprojectM/ProjectMCWrapper.cpp
++++ b/src/libprojectM/ProjectMCWrapper.cpp
+@@ -183,6 +183,22 @@ float projectm_get_beat_sensitivity(projectm_handle instance)
+     return projectMInstance->GetBeatSensitivity();
+ }
+ 
++void projectm_set_band_sensitivity(projectm_handle instance, float bass, float mid, float treble)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    projectMInstance->SetBandSensitivity(bass, mid, treble);
++}
++
++void projectm_set_band_frequencies(projectm_handle instance, float sample_rate,
++                                   float bass_low, float bass_high,
++                                   float mid_low, float mid_high,
++                                   float treble_low, float treble_high)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    float const hz[6]{bass_low, bass_high, mid_low, mid_high, treble_low, treble_high};
++    projectMInstance->SetBandFrequencies(sample_rate, hz);
++}
++
+ void projectm_set_animation_speed(projectm_handle instance, float speed)
+ {
+     auto projectMInstance = handle_to_instance(instance);

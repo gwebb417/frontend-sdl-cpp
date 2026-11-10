@@ -171,6 +171,7 @@ void HelpWindow::FillKeyboardShortcutsTable()
     _shortcuts = {
         {"General",
          {{"Toggle Menu/UI", "Escape"},
+          {"Open Settings", "Ctrl+s"},
           {"Quit projectM", "Ctrl+q"},
           {"Toggle Fullscreen", "Ctrl+f, Right Mouse"},
           {"Move to Next Monitor", "Ctrl+m"},
@@ -204,6 +205,7 @@ void HelpWindow::FillKeyboardShortcutsTable()
         {"Visuals and Audio",
          {{"Toggle Aspect Correction", "a"},
           {"Increase / Decrease Beat Sensitivity by 1% (off with Beat Averaging)", "Cursor Up / Cursor Down"},
+          {"Faster / Slower Ambient Speed by 0.05", "Cursor Right / Cursor Left"},
           {"Add Random Waveform at Mouse Pointer", "Shift+Left Mouse"},
           {"Clear Random Waveforms", "Middle Mouse"}}},
 

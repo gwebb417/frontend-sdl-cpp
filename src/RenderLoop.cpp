@@ -324,7 +324,16 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             break;
 
         case SDLK_s:
-            if (!modifierPressed)
+            // Either Ctrl key (modifierPressed only covers the left one), or Cmd on macOS.
+            if (modifierPressed || (keyModifier & KMOD_CTRL))
+            {
+                // The File menu always listed Ctrl+s for Settings, but it was never wired up.
+                // The settings window is only drawn while the UI is visible, so show that too.
+                _projectMGui.Visible(true);
+                _sdlRenderingWindow.ShowCursor(true);
+                _projectMGui.ShowSettingsWindow();
+            }
+            else
             {
                 _projectMWrapper.SaveCurrentPresetToFavorites();
             }
@@ -433,6 +442,20 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             {
                 // Decrease beat sensitivity
                 _projectMWrapper.ChangeBeatSensitivity(-0.01f);
+            }
+            break;
+
+        case SDLK_RIGHT:
+            if (!modifierPressed)
+            {
+                _projectMWrapper.ChangeAmbientSpeed(0.05f);
+            }
+            break;
+
+        case SDLK_LEFT:
+            if (!modifierPressed)
+            {
+                _projectMWrapper.ChangeAmbientSpeed(-0.05f);
             }
             break;
     }

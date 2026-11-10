@@ -101,6 +101,14 @@ projectM.meshY = 54
 # Transition time in seconds for soft cuts
 projectM.transitionDuration = 3
 
+# Slows down all preset animation evenly: 1 = normal speed, 0.5 = half speed, 0.1 = slowest.
+# Display and transition durations stay in real seconds.
+projectM.ambientSpeed = 1.0
+
+# If true, presets move as fast at any FPS as they do at 60 FPS. If false, presets move faster
+# at higher FPS and slower at lower FPS (standard Milkdrop/projectM behavior).
+projectM.fpsIndependentMotion = true
+
 # Hard cuts are immediate presets transitions on an intensive beat.
 # If enabled, after "hardCutDuration" seconds have passed and an intensive beat is detected,
 # a hard cut is performed. "hardCutDuration" should be set lower than "displayDuration" to have an effect.
@@ -115,6 +123,24 @@ projectM.aspectCorrectionEnabled = true
 # If beatAveraging is true, presets react the standard Milkdrop way and beatSensitivity is not used.
 projectM.beatSensitivity = 1.0
 projectM.beatAveraging = false
+
+# Separate sensitivity for bass, mids and treble, multiplied with beatSensitivity (same scale).
+# Not used if beatAveraging is true.
+projectM.bassSensitivity = 1.0
+projectM.midSensitivity = 1.0
+projectM.trebleSensitivity = 1.0
+
+# Which frequencies count as bass, mids and treble:
+# music = bass 20-250 Hz, mid 250-4000 Hz, treble 4000-20000 Hz
+# standard = Milkdrop/official projectM split (0-11025 Hz in three equal parts: 0-3675, 3675-7350, 7350-11025 Hz)
+# custom = the bandBass/bandMid/bandTreble ranges below, in Hz
+projectM.bandRanges = music
+projectM.bandBassLow = 20
+projectM.bandBassHigh = 250
+projectM.bandMidLow = 250
+projectM.bandMidHigh = 4000
+projectM.bandTrebleLow = 4000
+projectM.bandTrebleHigh = 20000
 
 
 ### Logging settings

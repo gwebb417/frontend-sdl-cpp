@@ -7,6 +7,8 @@ vcpkg_from_github(
     PATCHES
         macos-pkgconfig.patch
         beat-sensitivity.patch # projectMSDL fork: make projectm_set_beat_sensitivity() work
+        animation-speed.patch # projectMSDL fork: animation speed + frame-rate independent motion
+        band-sensitivity.patch # projectMSDL fork: separate bass/mid/treble sensitivity
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS

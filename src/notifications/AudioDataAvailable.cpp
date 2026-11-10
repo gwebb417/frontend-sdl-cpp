@@ -17,6 +17,12 @@ Poco::NotificationCenter& AudioDataAvailable::Center()
     return center;
 }
 
+std::atomic<uint32_t>& AudioDataAvailable::SampleRate()
+{
+    static std::atomic<uint32_t> sampleRate{44100};
+    return sampleRate;
+}
+
 AudioDataAvailable::AudioDataAvailable(uint32_t channels, const float* samples, const uint32_t sampleCount)
     : _channels(channels)
 {
