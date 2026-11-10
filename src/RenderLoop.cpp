@@ -7,6 +7,8 @@
 #include "gui/ProjectMGUI.h"
 
 #include <Poco/Format.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/NumberParser.h>
 #include <Poco/NotificationCenter.h>
 
 #include <Poco/Util/Application.h>
@@ -15,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 #include "ProjectMSDLApplication.h"
 
@@ -58,6 +61,8 @@ void RenderLoop::Run()
         limiter.StartFrame();
 
         PollEvents();
+        _remoteControl.Update([this] { return RemoteStatusJson(); },
+                              [this](const RemoteControl::Command& command) { ExecuteRemoteCommand(command); });
         // Apply window size/position/monitor/fullscreen changes from the settings window once per frame.
         _sdlRenderingWindow.ApplyPendingConfigChanges();
         _audioCapture.FillBuffer();
@@ -82,6 +87,7 @@ void RenderLoop::Run()
     }
 
     gpuTimer.Destroy();
+    _remoteControl.Stop();
     _spoutOutput.Release();
     _outputPipeline.Destroy();
 
@@ -270,6 +276,164 @@ void RenderLoop::ChangeZoom(float value)
     ProjectMSDLApplication::instance().UserConfiguration()->setDouble("effects.zoom", zoom);
     Poco::NotificationCenter::defaultCenter().postNotification(
         new Notification::DisplayToast(zoom <= OutputEffects::MinZoom ? std::string("Zoom: Off") : Poco::format("Zoom: %.1hfx", zoom)));
+}
+
+void RenderLoop::ExecuteRemoteCommand(const RemoteControl::Command& command)
+{
+    using Action = Notification::PlaybackControl::Action;
+    auto& notificationCenter = Poco::NotificationCenter::defaultCenter();
+    auto userConfig = ProjectMSDLApplication::instance().UserConfiguration();
+    const auto& action = command.action;
+
+    auto toast = [&notificationCenter](const std::string& message) {
+        notificationCenter.postNotification(new Notification::DisplayToast(message));
+    };
+    auto number = [&command](double& value) {
+        return Poco::NumberParser::tryParseFloat(command.value, value) && std::isfinite(value);
+    };
+
+    if (action == "next")
+    {
+        notificationCenter.postNotification(new Notification::PlaybackControl(Action::NextPreset, command.smooth));
+    }
+    else if (action == "previous")
+    {
+        notificationCenter.postNotification(new Notification::PlaybackControl(Action::PreviousPreset, command.smooth));
+    }
+    else if (action == "random")
+    {
+        notificationCenter.postNotification(new Notification::PlaybackControl(Action::RandomPreset, command.smooth));
+    }
+    else if (action == "back")
+    {
+        notificationCenter.postNotification(new Notification::PlaybackControl(Action::LastPreset, command.smooth));
+    }
+    else if (action == "lock")
+    {
+        notificationCenter.postNotification(new Notification::PlaybackControl(Action::TogglePresetLocked));
+    }
+    else if (action == "shuffle")
+    {
+        notificationCenter.postNotification(new Notification::PlaybackControl(Action::ToggleShuffle));
+    }
+    else if (action == "favorite-save")
+    {
+        _projectMWrapper.SaveCurrentPresetToFavorites();
+    }
+    else if (action == "favorite-remove")
+    {
+        _projectMWrapper.RemoveCurrentPresetFromFavorites();
+    }
+    else if (action == "disable")
+    {
+        // Only while all presets play: in favorites mode the current file is the favorite's copy,
+        // and in disabled-only mode it's disabled already.
+        if (_projectMWrapper.PlaylistModeName() == "all")
+        {
+            _projectMWrapper.DisableCurrentPreset();
+        }
+        else
+        {
+            toast("Disable works while all presets play");
+        }
+    }
+    else if (action == "reenable")
+    {
+        if (_projectMWrapper.PlaylistModeName() == "disabled")
+        {
+            _projectMWrapper.ReenableCurrentPreset();
+        }
+        else
+        {
+            toast("Re-enable works while disabled presets play");
+        }
+    }
+    else if (action == "undo")
+    {
+        _projectMWrapper.UndoFavoriteChange();
+    }
+    else if (action == "mode-favorites")
+    {
+        _projectMWrapper.ToggleFavoritesOnly();
+    }
+    else if (action == "mode-disabled")
+    {
+        _projectMWrapper.ToggleDisabledOnly();
+    }
+    else if (action == "beat-averaging")
+    {
+        bool on = command.value == "1" || command.value == "true";
+        userConfig->setBool("projectM.beatAveraging", on);
+        toast(on ? "Beat Averaging: On" : "Beat Averaging: Off");
+    }
+    else if (action == "beat-sensitivity")
+    {
+        double value{};
+        if (number(value) && !_projectMWrapper.BeatAveragingEnabled())
+        {
+            value = std::clamp(std::round(value * 100.0) / 100.0, 0.0, 2.0);
+            userConfig->setDouble("projectM.beatSensitivity", value);
+            toast(Poco::format("Beat Sensitivity: %.2f", value));
+        }
+    }
+    else if (action == "ambient-speed")
+    {
+        double value{};
+        if (number(value))
+        {
+            value = std::clamp(std::round(value * 100.0) / 100.0, static_cast<double>(ProjectMWrapper::MinAmbientSpeed), 1.0);
+            userConfig->setDouble("projectM.ambientSpeed", value);
+            toast(Poco::format("Ambient Speed: %.2f", value));
+        }
+    }
+    else if (action == "mirror")
+    {
+        for (const auto& mode : OutputEffects::MirrorModeNames())
+        {
+            if (mode.first == command.value)
+            {
+                userConfig->setString("effects.mirror", mode.first);
+                toast("Mirror: " + mode.second);
+            }
+        }
+    }
+    else if (action == "zoom")
+    {
+        double value{};
+        if (number(value))
+        {
+            value = std::clamp(std::round(value * 10.0) / 10.0, static_cast<double>(OutputEffects::MinZoom), static_cast<double>(OutputEffects::MaxZoom));
+            userConfig->setDouble("effects.zoom", value);
+            toast(value <= OutputEffects::MinZoom ? std::string("Zoom: Off") : Poco::format("Zoom: %.1fx", value));
+        }
+    }
+    else
+    {
+        poco_debug_f1(_logger, "Unknown remote control command: %s", action);
+    }
+}
+
+std::string RenderLoop::RemoteStatusJson() const
+{
+    auto& config = Poco::Util::Application::instance().config();
+    auto effects = OutputEffects::FromConfig();
+
+    Poco::JSON::Object status;
+    status.set("preset", _projectMWrapper.CurrentPresetName());
+    status.set("mode", _projectMWrapper.PlaylistModeName());
+    status.set("locked", _projectMWrapper.PresetLocked());
+    status.set("favorite", _projectMWrapper.CurrentPresetIsFavorite());
+    status.set("shuffle", config.getBool("projectM.shuffleEnabled", true));
+    status.set("beatAveraging", _projectMWrapper.BeatAveragingEnabled());
+    auto rounded = [](float value) { return std::round(static_cast<double>(value) * 100.0) / 100.0; };
+    status.set("beatSensitivity", rounded(_projectMWrapper.BeatSensitivity()));
+    status.set("ambientSpeed", rounded(_projectMWrapper.AmbientSpeed()));
+    status.set("mirror", OutputEffects::MirrorModeNames()[static_cast<size_t>(effects.mirror)].first);
+    status.set("zoom", rounded(effects.zoom));
+
+    std::ostringstream json;
+    status.stringify(json);
+    return json.str();
 }
 
 void RenderLoop::RenderProjectM()

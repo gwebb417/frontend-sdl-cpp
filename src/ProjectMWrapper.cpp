@@ -508,6 +508,51 @@ std::string ProjectMWrapper::CurrentPresetPath() const
     }
 }
 
+std::string ProjectMWrapper::CurrentPresetName() const
+{
+    auto presetFile = CurrentPresetPath();
+    return presetFile.empty() ? std::string() : Poco::Path(presetFile).getBaseName();
+}
+
+std::string ProjectMWrapper::PlaylistModeName() const
+{
+    switch (_mode)
+    {
+        case PlaylistMode::Favorites:
+            return "favorites";
+        case PlaylistMode::Disabled:
+            return "disabled";
+        case PlaylistMode::AllPresets:
+        default:
+            return "all";
+    }
+}
+
+bool ProjectMWrapper::CurrentPresetIsFavorite() const
+{
+    auto presetFile = CurrentPresetPath();
+    if (presetFile.empty())
+    {
+        return false;
+    }
+
+    try
+    {
+        Poco::Path favorite(FavoritesPath());
+        favorite.setFileName(Poco::Path(presetFile).getFileName());
+        return Poco::File(favorite).exists();
+    }
+    catch (const Poco::Exception&)
+    {
+        return false;
+    }
+}
+
+bool ProjectMWrapper::PresetLocked() const
+{
+    return _projectM != nullptr && projectm_get_preset_locked(_projectM);
+}
+
 void ProjectMWrapper::SaveCurrentPresetToFavorites()
 {
     auto presetFile = CurrentPresetPath();

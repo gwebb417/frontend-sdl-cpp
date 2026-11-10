@@ -51,6 +51,17 @@ private:
     void DrawEffectsSettingsTab();
 
     /**
+     * @brief Draws the remote control settings tab.
+     */
+    void DrawRemoteSettingsTab();
+
+    /**
+     * @brief Displays a masked text input. The value is stored when the input loses focus or Enter is pressed.
+     * @param property The property name in the config.
+     */
+    void PasswordSetting(const std::string& property);
+
+    /**
      * @brief Draws the help tab.
      */
     void DrawHelpTab() const;

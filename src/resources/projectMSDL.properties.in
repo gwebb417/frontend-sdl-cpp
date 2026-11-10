@@ -216,3 +216,13 @@ output.spout.name = projectM
 # Spout picture size in pixels. 0 x 0 = same as the window.
 output.spout.width = 0
 output.spout.height = 0
+
+### Remote control
+
+# Control projectM from a web browser, e.g. on your phone (Settings > Remote Control).
+remote.enabled = false
+remote.port = 8765
+# false: only this computer can open the remote control page. true: other devices in your network can too,
+# with the password below (plain HTTP, home network only).
+remote.allowOtherDevices = false
+remote.password =

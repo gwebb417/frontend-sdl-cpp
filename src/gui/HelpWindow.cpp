@@ -208,6 +208,7 @@ void HelpWindow::FillKeyboardShortcutsTable()
           {"Faster / Slower Ambient Speed by 0.05", "Cursor Right / Cursor Left"},
           {"Next Mirror Mode (Off, Left to Right, Top to Bottom, 4-Way)", "m"},
           {"Zoom In / Out", "+ / -"},
+          {"Remote Control from Your Phone", "Settings > Remote Control"},
           {"Add Random Waveform at Mouse Pointer", "Shift+Left Mouse"},
           {"Clear Random Waveforms", "Middle Mouse"}}},
 

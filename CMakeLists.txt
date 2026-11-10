@@ -106,7 +106,7 @@ else ()
     endif ()
     find_package(OpenGL REQUIRED COMPONENTS GLES3)
 endif()
-find_package(Poco REQUIRED COMPONENTS JSON XML Util Foundation)
+find_package(Poco REQUIRED COMPONENTS JSON XML Util Net Foundation)
 
 if(Poco_VERSION VERSION_GREATER_EQUAL 1.14.0)
     # POCO 1.14 requires at least C++17

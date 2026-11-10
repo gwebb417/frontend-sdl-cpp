@@ -19,6 +19,9 @@ add_executable(projectMSDL WIN32 MACOSX_BUNDLE
         ProjectMSDLApplication.h
         ProjectMWrapper.cpp
         ProjectMWrapper.h
+        RemoteControl.cpp
+        RemoteControl.h
+        RemoteControlPage.cpp
         RenderLoop.cpp
         RenderLoop.h
         SDLRenderingWindow.cpp
@@ -136,6 +139,7 @@ target_link_libraries(projectMSDL
         ProjectMSDL-Notifications
         libprojectM::playlist
         Poco::Util
+        Poco::Net
         SDL2::SDL2$<$<STREQUAL:${SDL2_LINKAGE},static>:-static>
         SDL2::SDL2main
         OpenGL::$<IF:$<BOOL:${ENABLE_GLES}>,GLES3,GL>

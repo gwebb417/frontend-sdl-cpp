@@ -4,6 +4,7 @@
 #include "ProjectMSDLApplication.h"
 #include "OutputPipeline.h"
 #include "ProjectMWrapper.h"
+#include "RemoteControl.h"
 #include "SDLRenderingWindow.h"
 
 #include "ProjectMGUI.h"
@@ -129,6 +130,7 @@ void SettingsWindow::Draw()
             DrawWindowSettingsTab();
             DrawAudioSettingsTab();
             DrawEffectsSettingsTab();
+            DrawRemoteSettingsTab();
             DrawHelpTab();
 
             ImGui::EndTabBar();
@@ -454,6 +456,100 @@ void SettingsWindow::DrawEffectsSettingsTab()
             ImGui::EndTable();
         }
         ImGui::EndTabItem();
+    }
+}
+
+void SettingsWindow::DrawRemoteSettingsTab()
+{
+    if (ImGui::BeginTabItem("Remote Control"))
+    {
+        if (ImGui::BeginTable("projectM", 5, ImGuiTableFlags_None))
+        {
+            ImGui::TableSetupColumn("##desc", ImGuiTableColumnFlags_WidthFixed, .0f);
+            ImGui::TableSetupColumn("##setting", ImGuiTableColumnFlags_WidthStretch, .0f);
+            ImGui::TableSetupColumn("##choose", ImGuiTableColumnFlags_WidthFixed, ButtonColumnWidth("..."));
+            ImGui::TableSetupColumn("##reset", ImGuiTableColumnFlags_WidthFixed, ButtonColumnWidth("Reset"));
+            ImGui::TableSetupColumn("##override", ImGuiTableColumnFlags_WidthFixed, .0f);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Enable Remote Control",
+                             "Control projectM from a web browser, e.g. on your phone: next/previous/random preset,\n"
+                             "lock, favorites, disable, modes, beat sensitivity, ambient speed, mirror and zoom.");
+            BooleanSetting("remote.enabled", false);
+
+            ImGui::BeginDisabled(!_effectiveConfiguration->getBool("remote.enabled", false));
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Port", "Network port of the remote control page. Change it if another program uses it.");
+            IntegerSetting("remote.port", RemoteControl::DefaultPort, 1024, 65535);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Allow Other Devices",
+                             "Off: only this computer can open the remote control page.\n"
+                             "On: other devices in your network, like your phone, can open it too. Needs a password.\n"
+                             "The connection isn't encrypted, so only use this in your home network.\n"
+                             "Windows may ask whether projectM may use the network the first time: allow private networks.");
+            BooleanSetting("remote.allowOtherDevices", false);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Password",
+                             "Required when other devices are allowed. Your phone's browser asks for it once\n"
+                             "(any user name). Press Enter to apply. Stored in the settings file as plain text.");
+            PasswordSetting("remote.password");
+
+            ImGui::EndDisabled();
+
+            ImGui::EndTable();
+        }
+
+        if (_effectiveConfiguration->getBool("remote.enabled", false))
+        {
+            // Listing the network addresses takes a moment, so only refresh them every few seconds.
+            static std::vector<std::string> urls;
+            static uint64_t urlsTicks{0};
+            if (urls.empty() || SDL_GetTicks64() - urlsTicks > 3000)
+            {
+                urls = RemoteControl::Urls();
+                urlsTicks = SDL_GetTicks64();
+            }
+
+            ImGui::SeparatorText("Open the remote control at");
+            ImGui::BulletText("This computer: %s", urls.front().c_str());
+            for (size_t index = 1; index < urls.size(); index++)
+            {
+                ImGui::BulletText("Phone/other devices (same network): %s", urls[index].c_str());
+            }
+            if (_effectiveConfiguration->getBool("remote.allowOtherDevices", false) &&
+                _effectiveConfiguration->getString("remote.password", "").empty())
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", "Set a password to allow other devices.");
+            }
+        }
+
+        ImGui::EndTabItem();
+    }
+}
+
+void SettingsWindow::PasswordSetting(const std::string& property)
+{
+    ImGui::TableSetColumnIndex(1);
+
+    auto value = _effectiveConfiguration->getString(property, "");
+    char buffer[256]{};
+    strncpy(buffer, value.c_str(), std::min<size_t>(255, value.size()));
+
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText(std::string("##password_" + property).c_str(), &buffer[0], IM_ARRAYSIZE(buffer), ImGuiInputTextFlags_Password);
+    if (ImGui::IsItemDeactivatedAfterEdit())
+    {
+        StoreSetting(property, std::string(buffer), "");
+    }
+
+    ResetButton(property, "");
+
+    if (_commandLineConfiguration->has(property))
+    {
+        OverriddenSettingMarker();
     }
 }
 

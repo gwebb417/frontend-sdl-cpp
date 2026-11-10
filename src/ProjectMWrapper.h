@@ -172,6 +172,26 @@ public:
      */
     void ReenableCurrentPreset();
 
+    /**
+     * @brief Name of the current preset (file name without extension), empty if none.
+     */
+    std::string CurrentPresetName() const;
+
+    /**
+     * @brief Which presets play: "all", "favorites" or "disabled".
+     */
+    std::string PlaylistModeName() const;
+
+    /**
+     * @brief Returns true if the current preset is in the favorites folder.
+     */
+    bool CurrentPresetIsFavorite() const;
+
+    /**
+     * @brief Returns true if the current preset is locked (no automatic switching).
+     */
+    bool PresetLocked() const;
+
 private:
     void PlaybackControlNotificationHandler(const Poco::AutoPtr<Notification::PlaybackControl>& notification);
 

@@ -3,6 +3,7 @@
 #include "AudioCapture.h"
 #include "OutputPipeline.h"
 #include "ProjectMWrapper.h"
+#include "RemoteControl.h"
 #include "SDLRenderingWindow.h"
 #include "SpoutOutput.h"
 
@@ -65,6 +66,16 @@ protected:
      * @param value A positive or negative delta value.
      */
     void ChangeZoom(float value);
+
+    /**
+     * @brief Runs a command from the remote control (main thread).
+     */
+    void ExecuteRemoteCommand(const RemoteControl::Command& command);
+
+    /**
+     * @brief Returns the status shown on the remote control page, as a JSON object.
+     */
+    std::string RemoteStatusJson() const;
 
     /**
      * @brief Handles SDL key press events.
@@ -143,6 +154,7 @@ protected:
 
     OutputPipeline _outputPipeline; //!< Offscreen rendering for mirror/zoom and Spout output.
     SpoutOutput _spoutOutput;       //!< Spout2 sender (Windows).
+    RemoteControl _remoteControl;   //!< HTTP remote control with a phone page.
 
     ModifierKeyStates _keyStates; //!< Current "pressed" states of modifier keys
 
