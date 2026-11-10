@@ -27,12 +27,11 @@ disabled presets carry over.
 
 - **Disable presets you don't like** with DEL, and look at them again later with CTRL-DEL (see
   [Disabled presets](#disabled-presets)).
-- **Beat Sensitivity really works now** and no longer fades after a few seconds; **Beat Averaging** gives the standard
-  Milkdrop reaction instead.
+- **Beat Sensitivity works**, and **Beat Averaging** gives the standard Milkdrop reaction instead.
 - **FPS counter** with optional frame times, and **toasts** in any corner or the center.
-- **ENTER opens the preset search** (instead of M).
+- **ENTER opens the preset search.**
 - Fixes: R and automatic switching no longer repeat the current preset, exact FPS limit, command-line options work on
-  Windows, presets keep changing with a Transition Duration of 0, the preset search fits small windows.
+  Windows, presets keep changing with a Transition Duration of 0.
 
 All features of this fork are listed below.
 
@@ -45,8 +44,7 @@ All features of this fork are listed below.
 - **Disable presets you don't like:** DEL moves the current preset into a `disabled` folder (in `userdata` in
   portable mode) and plays another one. Ctrl+Z undoes it. CTRL-DEL plays only your disabled presets, so you can
   re-enable some later. See [Disabled presets](#disabled-presets).
-- **Preset search window** (ENTER): from upstream PR #139, plus fixes. Old key presses no longer end up in the search
-  field, the window no longer closes right after opening, and it no longer crashes when no presets are loaded.
+- **Preset search window** (ENTER), based on upstream PR #139.
 - **FPS counter** (Settings > Window / Rendering): in any corner, with its own size setting independent of the UI
   scale. Optionally shows frame times: the time between frames, the GPU and CPU time per frame, and a graph of the
   last 240 frames. Repeated slow frames are also written to the log file.
@@ -76,16 +74,12 @@ All features of this fork are listed below.
 
 ### Bug fixes
 
-- Shuffle no longer turns itself off after pressing N, P or R.
 - R and shuffle never pick the preset that is already playing (with few presets, e.g. in favorites mode, it often
   seemed like nothing happened).
 - The FPS limit was not exact (60 FPS gave about 62.5, 144 about 166). It now uses a high-resolution timer.
 - Command-line options like `--presetPath` were ignored on Windows.
 - With a Transition Duration of 0, presets stopped changing automatically after the first switch (libprojectM divides
   by the duration). 0 now means a 0.05 second transition, which still looks instant.
-- The preset search window was cut off in windows smaller than about 1130x540 pixels. It now fits the window and
-  opens centered.
-- Ctrl+M only moves the window to the next monitor (the preset search is on ENTER now).
 - "Exclusive Mode Resolution" had no effect (wrong setting name).
 - "Enable Hard Cuts" toggled aspect correction instead of hard cuts.
 - The "Play Next Preset" menu item went to the previous preset.
@@ -96,18 +90,15 @@ All features of this fork are listed below.
 - Built-in defaults (mesh size, window size, V-Sync, logo preset) now match the shipped config file.
 - **Beat Sensitivity** had no effect, because libprojectM 4 stores the value but never uses it. This fork patches
   libprojectM (see `vcpkg-overlay/ports/projectm/beat-sensitivity.patch`) to apply it to the bass/mid/treble values
-  presets react to: 0 = presets don't react to the music, 1 = normal, 2 = twice as strong. (v1.1 scaled the audio
-  instead, which faded out after a few seconds because libprojectM compares the values with their recent average.)
-  Turn on **Beat Averaging** (Settings > Audio or the Options menu) for the standard Milkdrop reaction; Beat
+  presets react to: 0 = presets don't react to the music, 1 = normal, 2 = twice as strong. Turn on **Beat Averaging** (Settings > Audio or the Options menu) for the standard Milkdrop reaction; Beat
   Sensitivity is then greyed out and the Up/Down keys don't change it.
 - "Use Adaptive VSync" is greyed out while "Wait for Vertical Sync" is off (it has no effect then), the log says which
   vertical sync mode is actually used, and its description no longer suggests it's FreeSync/G-Sync.
 - The app could freeze when switching presets (mostly on Linux, e.g. pressing R): the audio thread and the preset
   switch could each wait for a lock the other held. Audio data now uses its own notification channel.
 - Broken presets (e.g. "Could not compile per-pixel code") were skipped silently, but the app still treated them as
-  the current preset: the title showed the wrong name, S saved the broken preset instead of the one on screen, and
-  favorites mode seemed stuck. Only presets that actually loaded count now, and a message is shown if none could be
-  loaded.
+  the current preset, so the window title showed the wrong name. Only presets that actually loaded count now, and a
+  message is shown if none could be loaded.
 - Linux: the app could close when switching in or out of fullscreen (X11 error "BadMatch" from `X_SetInputFocus`,
   e.g. on GNOME). Such harmless X11 errors are now logged instead.
 - Windows: no presets were found if the folder name contained characters like ä, ö or ü.
