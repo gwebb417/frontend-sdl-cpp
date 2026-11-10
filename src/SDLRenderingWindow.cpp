@@ -119,6 +119,18 @@ void SDLRenderingWindow::GetDrawableSize(int& width, int& height) const
 
 void SDLRenderingWindow::Swap() const
 {
+    // libprojectM 4.1 leaves its internal canvas (the image before the preset's composite shader) bound as
+    // the READ framebuffer. Capture tools that hook the buffer swap, like OBS Game Capture, read from the
+    // currently bound read framebuffer, so they captured that canvas instead of the final picture: same
+    // shapes, but wrong colors. Bind the window's own framebuffer before presenting.
+    using BindFramebufferFn = void (*)(unsigned int, unsigned int);
+    static auto bindFramebuffer = reinterpret_cast<BindFramebufferFn>(SDL_GL_GetProcAddress("glBindFramebuffer"));
+    if (bindFramebuffer)
+    {
+        constexpr unsigned int glFramebuffer = 0x8D40; // GL_FRAMEBUFFER: both read and draw framebuffer
+        bindFramebuffer(glFramebuffer, 0);
+    }
+
     SDL_GL_SwapWindow(_renderingWindow);
 }
 

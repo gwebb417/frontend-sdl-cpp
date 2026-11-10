@@ -112,6 +112,7 @@ All features of this fork are listed below.
   e.g. on GNOME). Such harmless X11 errors are now logged instead.
 - Windows: no presets were found if the folder name contained characters like ä, ö or ü.
 - Preset paths no longer contain a double slash (e.g. in the path copied with Ctrl+C).
+- OBS Game Capture (and similar capture tools) showed the image before the preset's final shader, so colors were wrong.
 
 ## Keybinds
 
