@@ -5,7 +5,7 @@ This is an unofficial fork, not an official projectM release.
 
 ## Download
 
-The current version is **v1.3** ([release page](https://github.com/gwebb417/frontend-sdl-cpp/releases/tag/fork-v1.3)).
+The current version is **v1.4** ([release page](https://github.com/gwebb417/frontend-sdl-cpp/releases/tag/fork-v1.4)).
 Both downloads are on the [latest release](https://github.com/gwebb417/frontend-sdl-cpp/releases/latest) page. They
 already include the presets and textures (see [Presets and textures](#presets-and-textures)) and run in
 [portable mode](#new-features), so settings and favorites are kept in the unpacked folder.
@@ -23,15 +23,17 @@ they're missing.
 into the new one (or just replace `projectMSDL.exe` / `projectMSDL` in your old folder). Settings, favorites and
 disabled presets carry over.
 
-## What's new in v1.3
+## What's new in v1.4
 
-- **Disable presets you don't like** with DEL, and look at them again later with CTRL-DEL (see
-  [Disabled presets](#disabled-presets)).
-- **Beat Sensitivity works**, and **Beat Averaging** gives the standard Milkdrop reaction instead.
-- **FPS counter** with optional frame times, and **toasts** in any corner or the center.
-- **ENTER opens the preset search.**
-- Fixes: R and automatic switching no longer repeat the current preset, exact FPS limit, command-line options work on
-  Windows, presets keep changing with a Transition Duration of 0.
+- **Remote control from your phone:** a web page with all the main controls, served by projectM itself (see
+  [Remote control](#remote-control)).
+- **Spout output for OBS** (Windows): OBS keeps getting the picture while projectM is minimized, without menus or
+  toasts (see [Spout output](#spout-output-obs)).
+- **Mirror and zoom effects:** M cycles left-to-right, top-to-bottom and 4-way mirroring, +/- zoom in and out.
+- **Ambient Speed:** slows all preset animation evenly (LEFT/RIGHT keys).
+- **Same Speed at Any FPS:** presets no longer move faster at higher FPS limits.
+- **Bass, Mid and Treble Sensitivity**, and **frequency bands** that match real bass, mids and treble.
+- Fixes: Ctrl+S opens the settings, correct colors in OBS Game Capture.
 
 All features of this fork are listed below.
 
@@ -56,6 +58,22 @@ All features of this fork are listed below.
   folder on Linux/macOS). Together with `presets` and `textures` folders next to the exe, the whole folder can then be
   copied or moved anywhere. If the folder can't be written to (e.g. inside `C:\Program Files`), a message says that
   settings and favorites can't be saved.
+- **Remote control:** control projectM from your phone's web browser (see [Remote control](#remote-control)).
+- **Spout output** (Windows): share the picture with OBS and other Spout programs, also while projectM is minimized
+  (see [Spout output](#spout-output-obs)).
+- **Mirror and zoom effects** (Settings > Effects / Spout, M and +/- keys): mirror the left half onto the right, the
+  top half onto the bottom, or the top left quarter into all four quarters, and zoom into the center up to 4x. They
+  apply to the window and the Spout output alike.
+- **Ambient Speed** (Settings > projectM, LEFT/RIGHT keys): slows down everything a preset animates, evenly: motion,
+  zoom, rotation, warp, fading trails and the reaction to the music. 1 = normal, 0.1 = slowest. Display and transition
+  durations stay in real seconds.
+- **Same Speed at Any FPS** (on by default): Milkdrop presets move a fixed step per frame, so they ran faster at 144
+  FPS than at 60. Presets now move at their 60 FPS speed at any FPS limit. Turn it off for the original behavior.
+- **Bass, Mid and Treble Sensitivity** (Settings > Audio, Options menu): how strongly presets react to each band, on
+  top of Beat Sensitivity.
+- **Frequency bands** (Settings > Audio): Milkdrop and the official projectM split only 0-11025 Hz into three equal
+  parts, so "bass" was 0-3675 Hz. The default **Music** bands are bass 20-250 Hz, mid 250-4000 Hz and treble
+  4000-20000 Hz. **Milkdrop Standard** brings back the original split, and **Custom** lets you set the ranges in Hz.
 - **Linux records what's playing:** if no audio device is set, the "Monitor of ..." device of the current output is
   used instead of the microphone, so projectM visualizes the music the PC plays. Pick another device in the settings
   or with Ctrl+I.
@@ -104,6 +122,7 @@ All features of this fork are listed below.
 - Windows: no presets were found if the folder name contained characters like ä, ö or ü.
 - Preset paths no longer contain a double slash (e.g. in the path copied with Ctrl+C).
 - OBS Game Capture (and similar capture tools) showed the image before the preset's final shader, so colors were wrong.
+- Ctrl+S didn't open the settings, although the File menu lists it.
 
 ## Keybinds
 
@@ -162,11 +181,45 @@ type must appear in the preset name (not case sensitive).
 | Y         | Toggle shuffle (shows a toast)                  |
 | A         | Toggle aspect correction (shows a toast)        |
 | UP / DOWN | Increase / decrease beat sensitivity (not while Beat Averaging is on) |
+| LEFT / RIGHT | Slower / faster Ambient Speed                |
+| M         | Next mirror mode (off, left to right, top to bottom, 4-way) |
+| + / -     | Zoom in / out                                   |
+| CTRL-S    | Open the settings                               |
 | CTRL-C    | Copy the current preset's path (shows a toast)  |
 | CTRL-F    | Toggle fullscreen                               |
 | CTRL-M    | Move the window to the next display             |
 | CTRL-I    | Switch to the next audio input device           |
 | CTRL-Q    | Quit                                            |
+
+## Remote control
+
+Control projectM from your phone (or any web browser): next, previous and random preset (with an optional smooth
+transition), lock, shuffle, mirror, zoom, Ambient Speed, Beat Averaging and Beat Sensitivity, save and remove
+favorites, disable and re-enable presets, undo, and the favorites-only and disabled-only modes. The page also shows the
+current preset.
+
+1. In **Settings > Remote Control**, turn on **Enable Remote Control**.
+2. To use it from your phone, also turn on **Allow Other Devices** and set a **Password** (press Enter to apply).
+   Windows may ask whether projectM may use the network: allow it for private networks.
+3. Open the address shown in the settings in your phone's browser, e.g. `http://192.168.1.20:8765`. The phone must
+   be in the same network (Wi-Fi). The browser asks for the password once: any user name works.
+
+Without **Allow Other Devices**, the page only opens on the PC itself (`http://127.0.0.1:8765`). The connection is not
+encrypted, so only allow other devices in your home network. Web pages from other sites can't send commands to it.
+Tip: add the page to your phone's home screen.
+
+## Spout output (OBS)
+
+OBS Game Capture pauses while projectM is minimized, and it also captures the menus and toasts. Spout output (Windows
+only) shares the picture directly with OBS instead:
+
+1. Install the [OBS Spout2 plugin](https://github.com/Off-World-Live/obs-spout2-plugin/releases/latest).
+2. In projectM, turn on **Options > Spout Output** (or **Settings > Effects / Spout**).
+3. In OBS, add a **Spout2 Capture** source and pick **projectM**.
+
+The picture keeps coming while projectM is minimized or covered, and contains no menus, toasts or FPS counter. Mirror
+and zoom apply to it too. **Spout Resolution** sets a fixed size, e.g. 1920 x 1080, independent of the window; the
+window then shows the same picture scaled to fit.
 
 ## Building the standalone Windows version
 
@@ -176,8 +229,15 @@ other versions) and [vcpkg](https://github.com/microsoft/vcpkg) (here in `C:\vcp
 from `vcpkg.json` automatically during the first configure, which can take a while.
 
 libprojectM is built from the overlay port in `vcpkg-overlay/ports/projectm` (set in `vcpkg-configuration.json`): the
-official vcpkg port plus `beat-sensitivity.patch`, which makes the Beat Sensitivity setting work. The Linux workflow
-applies the same patch.
+official vcpkg port plus these patches, which the Linux workflow applies too:
+
+- `beat-sensitivity.patch`: makes the Beat Sensitivity setting work.
+- `animation-speed.patch`: Ambient Speed and Same Speed at Any FPS.
+- `band-sensitivity.patch`: Bass/Mid/Treble Sensitivity and the frequency bands.
+- `render-fbo.patch`: lets projectM render into an offscreen image (for Spout and the effects), a backport of
+  `projectm_opengl_render_frame_fbo()` from libprojectM 4.2.
+
+Spout output uses [Spout2](https://github.com/leadedge/Spout2) (BSD 2-Clause license) from vcpkg.
 
 One-time setup of the build folder (the exe is installed into `C:\dev\projectm-standalone`):
 

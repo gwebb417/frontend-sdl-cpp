@@ -36,8 +36,17 @@ F            Switch between favorites only and all presets
 DEL          Disable the current preset (favorites mode: remove from favorites)
 CTRL-DEL     Switch to disabled presets only (there, DEL re-enables)
 CTRL-Z       Undo the last save, removal, disable or re-enable
+UP / DOWN    Beat sensitivity
+LEFT / RIGHT Ambient Speed (slower / faster animation)
+M            Mirror (left to right, top to bottom, 4-way, off)
++ / -        Zoom in / out
+CTRL-S       Settings
 CTRL-F       Fullscreen
 CTRL-Q       Quit
+
+Remote control from your phone: Settings > Remote Control. Turn on "Enable
+Remote Control" and "Allow Other Devices", set a password, then open the
+address shown there in your phone's browser (same Wi-Fi).
 
 What's in this folder
 ---------------------

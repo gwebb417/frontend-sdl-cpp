@@ -8,7 +8,7 @@
     2. Installs it into a clean staging folder.
     3. Downloads the current Cream of the Crop presets and Milkdrop texture pack from the official
        projectM repositories and copies them into "presets" and "textures".
-    4. Adds portable.txt, README.txt (both from this folder) and LICENSE.md.
+    4. Adds portable.txt, README.txt (both from this folder), LICENSE.md and the Spout2 license.
     5. Starts the exe for a few seconds as a smoke test, then removes the "userdata" folder it creates.
     6. Zips the staging folder.
 
@@ -86,6 +86,9 @@ Copy-Item (Join-Path $textureRepo "README.md") (Join-Path $staging "textures")
 # 4. Text files
 Copy-Item (Join-Path $PSScriptRoot "portable.txt"), (Join-Path $PSScriptRoot "README.txt") $staging
 Copy-Item (Join-Path $repoRoot "LICENSE.md") $staging
+# Spout2 is BSD licensed: its license text must come with the program.
+$spoutLicense = Join-Path $BuildDir "vcpkg_installed\x64-windows-static\share\spout2\copyright"
+Copy-Item $spoutLicense (Join-Path $staging "LICENSE-Spout2.txt")
 
 # 5. Smoke test: the exe must still be running after a few seconds.
 if (-not $SkipTest)
