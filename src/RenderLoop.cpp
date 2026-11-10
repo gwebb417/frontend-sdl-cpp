@@ -13,6 +13,9 @@
 
 #include <SDL2/SDL.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include "ProjectMSDLApplication.h"
 
 RenderLoop::RenderLoop()
@@ -44,6 +47,8 @@ void RenderLoop::Run()
     GpuTimer gpuTimer;
     gpuTimer.Initialize();
 
+    _outputPipeline.Initialize();
+
     FrameStats stats;
     stats.limiter = &limiter;
 
@@ -55,11 +60,10 @@ void RenderLoop::Run()
         PollEvents();
         // Apply window size/position/monitor/fullscreen changes from the settings window once per frame.
         _sdlRenderingWindow.ApplyPendingConfigChanges();
-        CheckViewportSize();
         _audioCapture.FillBuffer();
 
         gpuTimer.Begin();
-        _projectMWrapper.RenderFrame();
+        RenderProjectM();
         gpuTimer.End();
 
         stats.gpuTimeMs = gpuTimer.LastResultMs();
@@ -78,6 +82,8 @@ void RenderLoop::Run()
     }
 
     gpuTimer.Destroy();
+    _spoutOutput.Release();
+    _outputPipeline.Destroy();
 
     notificationCenter.removeObserver(_quitNotificationObserver);
 }
@@ -211,11 +217,31 @@ void RenderLoop::PollEvents()
     }
 }
 
-void RenderLoop::CheckViewportSize()
+void RenderLoop::CheckViewportSize(int fixedWidth, int fixedHeight)
 {
-    int renderWidth;
-    int renderHeight;
-    _sdlRenderingWindow.GetDrawableSize(renderWidth, renderHeight);
+    int windowWidth;
+    int windowHeight;
+    _sdlRenderingWindow.GetDrawableSize(windowWidth, windowHeight);
+
+    if (windowWidth != _windowWidth || windowHeight != _windowHeight)
+    {
+        _windowWidth = windowWidth;
+        _windowHeight = windowHeight;
+        _projectMGui.UpdateFontSize();
+    }
+
+    int renderWidth = windowWidth;
+    int renderHeight = windowHeight;
+    if (fixedWidth > 0 && fixedHeight > 0)
+    {
+        renderWidth = fixedWidth;
+        renderHeight = fixedHeight;
+    }
+    else if (renderWidth <= 0 || renderHeight <= 0)
+    {
+        // Minimized: keep the previous size, so the Spout output keeps running.
+        return;
+    }
 
     if (renderWidth != _renderWidth || renderHeight != _renderHeight)
     {
@@ -223,9 +249,64 @@ void RenderLoop::CheckViewportSize()
         _renderWidth = renderWidth;
         _renderHeight = renderHeight;
 
-        _projectMGui.UpdateFontSize();
-
         poco_debug_f2(_logger, "Resized rendering canvas to %?dx%?d.", renderWidth, renderHeight);
+    }
+}
+
+void RenderLoop::CycleMirrorMode()
+{
+    // Stored like a change in the settings window, so both always show the same value.
+    const auto& modes = OutputEffects::MirrorModeNames();
+    auto next = (static_cast<size_t>(OutputEffects::FromConfig().mirror) + 1) % modes.size();
+    ProjectMSDLApplication::instance().UserConfiguration()->setString("effects.mirror", modes[next].first);
+    Poco::NotificationCenter::defaultCenter().postNotification(
+        new Notification::DisplayToast("Mirror: " + modes[next].second));
+}
+
+void RenderLoop::ChangeZoom(float value)
+{
+    float zoom = std::clamp(std::round((OutputEffects::FromConfig().zoom + value) * 10.0f) / 10.0f,
+                            OutputEffects::MinZoom, OutputEffects::MaxZoom);
+    ProjectMSDLApplication::instance().UserConfiguration()->setDouble("effects.zoom", zoom);
+    Poco::NotificationCenter::defaultCenter().postNotification(
+        new Notification::DisplayToast(zoom <= OutputEffects::MinZoom ? std::string("Zoom: Off") : Poco::format("Zoom: %.1hfx", zoom)));
+}
+
+void RenderLoop::RenderProjectM()
+{
+    auto& config = Poco::Util::Application::instance().config();
+
+    auto effects = OutputEffects::FromConfig();
+    bool spout = _outputPipeline.Available() && SpoutOutput::Available() && config.getBool("output.spout.enabled", false);
+
+    int fixedWidth = 0;
+    int fixedHeight = 0;
+    if (spout)
+    {
+        fixedWidth = std::clamp(config.getInt("output.spout.width", 0), 0, 7680);
+        fixedHeight = std::clamp(config.getInt("output.spout.height", 0), 0, 4320);
+    }
+    CheckViewportSize(fixedWidth, fixedHeight);
+
+    if (!spout)
+    {
+        _spoutOutput.Release();
+    }
+
+    // Without effects and Spout, projectM renders straight into the window, exactly as before.
+    unsigned int framebuffer = 0;
+    if (_outputPipeline.Available() && (spout || effects.Active()))
+    {
+        framebuffer = _outputPipeline.BeginFrame(_renderWidth, _renderHeight);
+    }
+
+    _projectMWrapper.RenderFrame(framebuffer);
+
+    if (framebuffer != 0)
+    {
+        _outputPipeline.EndFrame(_windowWidth, _windowHeight, effects,
+                                 spout ? &_spoutOutput : nullptr,
+                                 config.getString("output.spout.name", "projectM"));
     }
 }
 
@@ -350,6 +431,27 @@ void RenderLoop::KeyEvent(const SDL_KeyboardEvent& event, bool down)
             if (modifierPressed)
             {
                 _sdlRenderingWindow.NextDisplay();
+            }
+            else
+            {
+                CycleMirrorMode();
+            }
+            break;
+
+        case SDLK_EQUALS: // + without Shift on most layouts
+        case SDLK_PLUS:
+        case SDLK_KP_PLUS:
+            if (!modifierPressed)
+            {
+                ChangeZoom(0.1f);
+            }
+            break;
+
+        case SDLK_MINUS:
+        case SDLK_KP_MINUS:
+            if (!modifierPressed)
+            {
+                ChangeZoom(-0.1f);
             }
             break;
 

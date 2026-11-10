@@ -1,8 +1,10 @@
 #pragma once
 
 #include "AudioCapture.h"
+#include "OutputPipeline.h"
 #include "ProjectMWrapper.h"
 #include "SDLRenderingWindow.h"
+#include "SpoutOutput.h"
 
 #include "notifications/Quit.h"
 
@@ -41,7 +43,28 @@ protected:
     /**
      * @brief Checks if the GL viewport size has changed and if so, reconfigured projectM accordingly.
      */
-    void CheckViewportSize();
+    /**
+     * @brief Updates the window size and the size projectM renders at.
+     * @param fixedWidth Fixed render width (Spout resolution), 0 = window size.
+     * @param fixedHeight Fixed render height, 0 = window size.
+     */
+    void CheckViewportSize(int fixedWidth, int fixedHeight);
+
+    /**
+     * @brief Renders projectM, directly into the window or through the output pipeline (effects, Spout).
+     */
+    void RenderProjectM();
+
+    /**
+     * @brief Switches to the next mirror mode (M key) and shows it in a toast.
+     */
+    void CycleMirrorMode();
+
+    /**
+     * @brief Changes the zoom effect by the given value (+/- keys) and shows it in a toast.
+     * @param value A positive or negative delta value.
+     */
+    void ChangeZoom(float value);
 
     /**
      * @brief Handles SDL key press events.
@@ -113,8 +136,13 @@ protected:
 
     bool _mouseDown{false}; //!< Left mouse button is pressed
 
-    int _renderWidth{0};
+    int _renderWidth{0};  //!< Size projectM renders at: the window size, or the fixed Spout resolution.
     int _renderHeight{0};
+    int _windowWidth{0};  //!< Drawable size of the window.
+    int _windowHeight{0};
+
+    OutputPipeline _outputPipeline; //!< Offscreen rendering for mirror/zoom and Spout output.
+    SpoutOutput _spoutOutput;       //!< Spout2 sender (Windows).
 
     ModifierKeyStates _keyStates; //!< Current "pressed" states of modifier keys
 

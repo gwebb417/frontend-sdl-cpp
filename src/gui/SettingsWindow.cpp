@@ -2,6 +2,7 @@
 
 #include "AudioCapture.h"
 #include "ProjectMSDLApplication.h"
+#include "OutputPipeline.h"
 #include "ProjectMWrapper.h"
 #include "SDLRenderingWindow.h"
 
@@ -127,6 +128,7 @@ void SettingsWindow::Draw()
             DrawProjectMSettingsTab();
             DrawWindowSettingsTab();
             DrawAudioSettingsTab();
+            DrawEffectsSettingsTab();
             DrawHelpTab();
 
             ImGui::EndTabBar();
@@ -400,6 +402,57 @@ void SettingsWindow::DrawWindowSettingsTab()
             ImGui::EndTable();
         }
         StartupOnlyNote();
+        ImGui::EndTabItem();
+    }
+}
+
+void SettingsWindow::DrawEffectsSettingsTab()
+{
+    if (ImGui::BeginTabItem("Effects / Spout"))
+    {
+        if (ImGui::BeginTable("projectM", 5, ImGuiTableFlags_None))
+        {
+            ImGui::TableSetupColumn("##desc", ImGuiTableColumnFlags_WidthFixed, .0f);
+            ImGui::TableSetupColumn("##setting", ImGuiTableColumnFlags_WidthStretch, .0f);
+            ImGui::TableSetupColumn("##choose", ImGuiTableColumnFlags_WidthFixed, ButtonColumnWidth("..."));
+            ImGui::TableSetupColumn("##reset", ImGuiTableColumnFlags_WidthFixed, ButtonColumnWidth("Reset"));
+            ImGui::TableSetupColumn("##override", ImGuiTableColumnFlags_WidthFixed, .0f);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Mirror",
+                             "Mirrors the picture. M key cycles through the modes.\n"
+                             "Left to Right: the left half is mirrored onto the right half.\n"
+                             "Top to Bottom: the top half is mirrored onto the bottom half.\n"
+                             "4-Way: the top left quarter is mirrored into all four quarters.\n"
+                             "Also applies to the Spout output.");
+            ChoiceSetting("effects.mirror", "off", OutputEffects::MirrorModeNames());
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Zoom",
+                             "Zooms into the center of the picture: 1 = off, 2 = twice as large.\n"
+                             "+/- keys change it too. Also applies to the Spout output.");
+            DoubleSetting("effects.zoom", 1.0, OutputEffects::MinZoom, OutputEffects::MaxZoom);
+
+#ifdef _WIN32
+            ImGui::TableNextRow();
+            LabelWithTooltip("Spout Output",
+                             "Shares the picture with other programs via Spout, e.g. OBS with the obs-spout2-plugin\n"
+                             "(add a \"Spout2 Capture\" source and pick \"projectM\").\n"
+                             "Keeps working while projectM is minimized or covered, and contains no menus, toasts or FPS counter.");
+            BooleanSetting("output.spout.enabled", false);
+
+            ImGui::BeginDisabled(!_effectiveConfiguration->getBool("output.spout.enabled", false));
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Spout Resolution",
+                             "Size of the Spout picture in pixels, e.g. 1920 x 1080. 0 x 0 = same as the window.\n"
+                             "projectM renders at this size. The window then shows the same picture scaled to fit,\n"
+                             "with black bars if the window has a different shape.");
+            IntegerSettingVec("output.spout.width", "output.spout.height", 0, 0, 0, 7680);
+            ImGui::EndDisabled();
+#endif
+
+            ImGui::EndTable();
+        }
         ImGui::EndTabItem();
     }
 }

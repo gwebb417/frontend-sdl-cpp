@@ -1,6 +1,7 @@
 #include "gui/MainMenu.h"
 
 #include "AudioCapture.h"
+#include "OutputPipeline.h"
 #include "ProjectMSDLApplication.h"
 #include "ProjectMWrapper.h"
 
@@ -185,6 +186,35 @@ void MainMenu::Draw()
             {
                 app.UserConfiguration()->setBool("projectM.fpsIndependentMotion", !fpsIndependentMotion);
             }
+
+            ImGui::Separator();
+
+            if (ImGui::BeginMenu("Mirror (M)"))
+            {
+                auto current = app.config().getString("effects.mirror", "off");
+                for (const auto& mode : OutputEffects::MirrorModeNames())
+                {
+                    if (ImGui::MenuItem(mode.second.c_str(), "", current == mode.first))
+                    {
+                        app.UserConfiguration()->setString("effects.mirror", mode.first);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            float zoom = OutputEffects::FromConfig().zoom;
+            if (NumberInput::Float("##zoom", &zoom, OutputEffects::MinZoom, OutputEffects::MaxZoom, "Zoom (+/-)"))
+            {
+                app.UserConfiguration()->setDouble("effects.zoom", zoom);
+            }
+
+#ifdef _WIN32
+            const bool spoutEnabled = app.config().getBool("output.spout.enabled", false);
+            if (ImGui::MenuItem("Spout Output", "", spoutEnabled))
+            {
+                app.UserConfiguration()->setBool("output.spout.enabled", !spoutEnabled);
+            }
+#endif
 
             ImGui::EndMenu();
         }

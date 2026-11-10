@@ -206,6 +206,8 @@ void HelpWindow::FillKeyboardShortcutsTable()
          {{"Toggle Aspect Correction", "a"},
           {"Increase / Decrease Beat Sensitivity by 1% (off with Beat Averaging)", "Cursor Up / Cursor Down"},
           {"Faster / Slower Ambient Speed by 0.05", "Cursor Right / Cursor Left"},
+          {"Next Mirror Mode (Off, Left to Right, Top to Bottom, 4-Way)", "m"},
+          {"Zoom In / Out", "+ / -"},
           {"Add Random Waveform at Mouse Pointer", "Shift+Left Mouse"},
           {"Clear Random Waveforms", "Middle Mouse"}}},
 

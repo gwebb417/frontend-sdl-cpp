@@ -13,6 +13,8 @@ add_executable(projectMSDL WIN32 MACOSX_BUNDLE
         FrameStats.h
         GpuTimer.cpp
         GpuTimer.h
+        OutputPipeline.cpp
+        OutputPipeline.h
         ProjectMSDLApplication.cpp
         ProjectMSDLApplication.h
         ProjectMWrapper.cpp
@@ -21,6 +23,8 @@ add_executable(projectMSDL WIN32 MACOSX_BUNDLE
         RenderLoop.h
         SDLRenderingWindow.cpp
         SDLRenderingWindow.h
+        SpoutOutput.cpp
+        SpoutOutput.h
         main.cpp
         projectMSDL.rc
         PresetPlaylist.cpp
@@ -103,6 +107,17 @@ if (TARGET GLEW::glew OR TARGET GLEW::glew_s)
     target_compile_definitions(projectMSDL
             PRIVATE
             USE_GLEW
+            )
+endif ()
+
+if (TARGET Spout2Static)
+    target_link_libraries(projectMSDL
+            PRIVATE
+            Spout2Static
+            )
+    target_compile_definitions(projectMSDL
+            PRIVATE
+            SPOUT_ENABLED
             )
 endif ()
 

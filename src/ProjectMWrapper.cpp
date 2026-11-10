@@ -170,7 +170,7 @@ void ProjectMWrapper::UpdateRealFPS(float fps) const
     projectm_set_fps(_projectM, static_cast<uint32_t>(std::round(fps)));
 }
 
-void ProjectMWrapper::RenderFrame()
+void ProjectMWrapper::RenderFrame(unsigned int framebufferObject)
 {
     glClearColor(0.0, 0.0, 0.0, 0.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -210,7 +210,15 @@ void ProjectMWrapper::RenderFrame()
     {
         _playlist->BeginPresetSwitch();
     }
-    projectm_opengl_render_frame(_projectM);
+    if (framebufferObject != 0)
+    {
+        // Our libprojectM patch render-fbo.patch (backport from libprojectM 4.2).
+        projectm_opengl_render_frame_fbo(_projectM, framebufferObject);
+    }
+    else
+    {
+        projectm_opengl_render_frame(_projectM);
+    }
 }
 
 void ProjectMWrapper::DisplayInitialPreset()

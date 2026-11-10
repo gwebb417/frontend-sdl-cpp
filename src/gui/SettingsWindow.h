@@ -46,6 +46,11 @@ private:
     void DrawAudioSettingsTab();
 
     /**
+     * @brief Draws the effects (mirror, zoom) and Spout output settings tab.
+     */
+    void DrawEffectsSettingsTab();
+
+    /**
      * @brief Draws the help tab.
      */
     void DrawHelpTab() const;

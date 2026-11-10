@@ -117,6 +117,35 @@ if(ENABLE_FREETYPE)
     find_package(Freetype)
 endif()
 
+# Spout2 (Windows only, optional): shares the rendered image with other apps like OBS (obs-spout2-plugin).
+# Located directly instead of find_package(Spout2): the vcpkg port's CMake config fails with static
+# triplets (its Spout2::Spout target references a DLL the port deletes).
+if(WIN32)
+    find_path(SPOUT2_INCLUDE_DIR SpoutGL/SpoutSender.h)
+    # vcpkg puts release and debug libraries in different folders with the same name.
+    find_library(SPOUT2_STATIC_LIBRARY_RELEASE Spout_static
+            PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib" NO_DEFAULT_PATH)
+    find_library(SPOUT2_STATIC_LIBRARY_DEBUG Spout_static
+            PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib" NO_DEFAULT_PATH)
+    if(NOT SPOUT2_STATIC_LIBRARY_RELEASE)
+        # Not built with vcpkg: search the usual places.
+        find_library(SPOUT2_STATIC_LIBRARY_RELEASE Spout_static)
+    endif()
+    if(SPOUT2_INCLUDE_DIR AND SPOUT2_STATIC_LIBRARY_RELEASE)
+        add_library(Spout2Static STATIC IMPORTED)
+        set_target_properties(Spout2Static PROPERTIES
+                IMPORTED_LOCATION "${SPOUT2_STATIC_LIBRARY_RELEASE}"
+                INTERFACE_INCLUDE_DIRECTORIES "${SPOUT2_INCLUDE_DIR}"
+                )
+        if(SPOUT2_STATIC_LIBRARY_DEBUG)
+            set_target_properties(Spout2Static PROPERTIES IMPORTED_LOCATION_DEBUG "${SPOUT2_STATIC_LIBRARY_DEBUG}")
+        endif()
+        message(STATUS "Spout2 output: enabled (${SPOUT2_STATIC_LIBRARY_RELEASE})")
+    else()
+        message(STATUS "Spout2 output: disabled (Spout2 not found)")
+    endif()
+endif()
+
 include(SDL2Target)
 include(dependencies_check.cmake)
 include(ImGui.cmake)

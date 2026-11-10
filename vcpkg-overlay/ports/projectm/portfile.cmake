@@ -9,6 +9,7 @@ vcpkg_from_github(
         beat-sensitivity.patch # projectMSDL fork: make projectm_set_beat_sensitivity() work
         animation-speed.patch # projectMSDL fork: animation speed + frame-rate independent motion
         band-sensitivity.patch # projectMSDL fork: separate bass/mid/treble sensitivity
+        render-fbo.patch # projectMSDL fork: projectm_opengl_render_frame_fbo() (backport from 4.2) for Spout/effects
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS

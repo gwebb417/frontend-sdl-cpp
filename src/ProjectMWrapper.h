@@ -43,8 +43,9 @@ public:
 
     /**
      * Renders a single projectM frame.
+     * @param framebufferObject OpenGL framebuffer object to render into, 0 = the window.
      */
-    void RenderFrame();
+    void RenderFrame(unsigned int framebufferObject = 0);
 
     /**
      * @brief Returns the targeted FPS value.

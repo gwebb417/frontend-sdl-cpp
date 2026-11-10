@@ -198,3 +198,21 @@ logging.loggers.root.channel = async
 # See https://docs.pocoproject.org/current/Poco.Util.LoggingConfigurator.html for details.
 # Example:
 #     logging.loggers.AudioCapture.level = debug
+
+### Effects and Spout output
+
+# Mirrors the picture: off, leftright (left half onto the right), topbottom (top half onto the bottom),
+# fourway (top left quarter into all four quarters).
+effects.mirror = off
+
+# Zooms into the center of the picture: 1.0 = off, up to 4.0.
+effects.zoom = 1.0
+
+# Windows only: shares the picture with other programs via Spout (e.g. OBS with the obs-spout2-plugin),
+# also while projectM is minimized. Without menus, toasts and FPS counter.
+output.spout.enabled = false
+# Name receivers see.
+output.spout.name = projectM
+# Spout picture size in pixels. 0 x 0 = same as the window.
+output.spout.width = 0
+output.spout.height = 0
