@@ -34,7 +34,7 @@ CTRL-S       Settings
 CTRL-F       Fullscreen
 CTRL-Q       Quit
 
-Remote control from your phone: Settings > Remote Control. Turn on "Enable
+Remote control from your phone: Settings > Remote / Spout. Turn on "Enable
 Remote Control" and "Allow Other Devices", set a password, then open the
 address shown there in your phone's browser (same Wi-Fi).
 

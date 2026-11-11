@@ -40,13 +40,13 @@ void HelpWindow::Draw()
         {
             if (ImGui::BeginTabItem("Keyboard Shortcuts"))
             {
-                // Size the function column to the longest text across all groups, so the tables line up.
-                float functionColumnWidth{0.0f};
+                // Size the key column to the longest key text across all groups, so the tables line up.
+                float keyColumnWidth{0.0f};
                 for (const auto& group : _shortcuts)
                 {
                     for (const auto& shortcut : group.shortcuts)
                     {
-                        functionColumnWidth = std::max(functionColumnWidth, ImGui::CalcTextSize(shortcut.first.c_str()).x);
+                        keyColumnWidth = std::max(keyColumnWidth, ImGui::CalcTextSize(shortcut.first.c_str()).x);
                     }
                 }
 
@@ -59,8 +59,8 @@ void HelpWindow::Draw()
 
                     if (ImGui::BeginTable(group.title.c_str(), 2, tableFlags))
                     {
-                        ImGui::TableSetupColumn("Function", ImGuiTableColumnFlags_WidthFixed, functionColumnWidth);
-                        ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthStretch, .0f);
+                        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, keyColumnWidth);
+                        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch, .0f);
                         ImGui::TableHeadersRow();
 
                         for (const auto& shortcut : group.shortcuts)
@@ -168,53 +168,37 @@ void HelpWindow::FillCommandLineArgumentTable()
 
 void HelpWindow::FillKeyboardShortcutsTable()
 {
+    // Pairs of (key, action). Settings explain themselves in their tooltips, so this only lists the keys.
     _shortcuts = {
-        {"General",
-         {{"Toggle Menu/UI", "Escape"},
-          {"Open Settings", "Ctrl+s"},
-          {"Quit projectM", "Ctrl+q"},
-          {"Toggle Fullscreen", "Ctrl+f, Right Mouse"},
-          {"Move to Next Monitor", "Ctrl+m"},
-          {"Next Audio Input Device", "Ctrl+i"},
-          {"Copy Current Preset Path to Clipboard", "Ctrl+c"}}},
-
-        {"Preset Playback",
-         {{"Next Preset (immediate / smooth)", "n / Shift+n"},
-          {"Previous Preset (immediate / smooth)", "p / Shift+p"},
-          {"Last Played Preset (immediate / smooth)", "Backspace / Shift+Backspace"},
-          {"Random Preset (immediate / smooth)", "r / Shift+r"},
-          {"Lock Current Preset", "Spacebar"},
-          {"Toggle Shuffle", "y"}}},
-
-        {"Preset Search",
-         {{"Open Preset Search", "Enter"},
-          {"Filter List", "Type words of the preset name, in any order"},
-          {"Move Selection", "Up/Down, PgUp/PgDown, Home/End"},
-          {"Play Selected Preset (immediate / smooth)", "Enter / Shift+Enter, or Double-Click"},
-          {"Close Preset Search", "Escape"}}},
+        {"Presets (hold Shift with N, P, R, Backspace or Enter for a smooth transition)",
+         {{"N / P", "Next / previous preset"},
+          {"R", "Random preset"},
+          {"Backspace", "Back to the last played preset"},
+          {"Space", "Lock current preset"},
+          {"Y", "Shuffle on/off"},
+          {"Enter", "Search presets (Enter plays, Esc closes)"}}},
 
         {"Favorites and Disabled Presets",
-         {{"Save Current Preset to Favorites", "s"},
-          {"Toggle Favorites Only / All Presets", "f"},
-          {"Disable Current Preset (moved to userdata\\disabled)", "Delete"},
-          {"Remove from Favorites (in favorites-only mode)", "Delete"},
-          {"Toggle Disabled Presets Only / All Presets", "Ctrl+Delete"},
-          {"Re-enable Current Preset (in disabled-only mode)", "Delete"},
-          {"Undo Last Save/Removal/Disable/Re-enable (up to 20 steps)", "Ctrl+z"}}},
+         {{"S", "Save to favorites"},
+          {"F", "Favorites only / all presets"},
+          {"Del", "Disable preset (in favorites: remove; in disabled: re-enable)"},
+          {"Ctrl+Del", "Disabled presets only / all presets"},
+          {"Ctrl+Z", "Undo (up to 20 steps)"}}},
 
-        {"Visuals and Audio",
-         {{"Toggle Aspect Correction", "a"},
-          {"Increase / Decrease Beat Sensitivity by 1% (off with Beat Averaging)", "Cursor Up / Cursor Down"},
-          {"Faster / Slower Ambient Speed by 0.05", "Cursor Right / Cursor Left"},
-          {"Next Mirror Mode (Off, Left to Right, Top to Bottom, 4-Way)", "m"},
-          {"Zoom In / Out", "+ / -"},
-          {"Remote Control from Your Phone", "Settings > Remote Control"},
-          {"Add Random Waveform at Mouse Pointer", "Shift+Left Mouse"},
-          {"Clear Random Waveforms", "Middle Mouse"}}},
+        {"Picture and Sound",
+         {{"Up / Down", "Beat Sensitivity"},
+          {"Left / Right", "Ambient Speed"},
+          {"M", "Mirror mode"},
+          {"+ / -", "Zoom"},
+          {"A", "Aspect correction"},
+          {"Shift+Left Click / Middle Click", "Add waveform / clear waveforms"}}},
 
-        {"Settings: Number Inputs",
-         {{"Apply Typed Value(s)", "Enter, or the Apply button (unapplied boxes are orange)"},
-          {"Move to Next Box Without Applying", "Tab"},
-          {"Step Typed Value", "Cursor Up/Down (Shift: 10x), then Enter/Apply"},
-          {"Cancel Typed Value", "Escape"}}}};
+        {"Window and Program",
+         {{"Esc", "Menu on/off"},
+          {"Ctrl+S", "Settings"},
+          {"Ctrl+F / Right Click", "Fullscreen"},
+          {"Ctrl+M", "Next monitor"},
+          {"Ctrl+I", "Next audio device"},
+          {"Ctrl+C", "Copy preset path"},
+          {"Ctrl+Q", "Quit"}}}};
 }

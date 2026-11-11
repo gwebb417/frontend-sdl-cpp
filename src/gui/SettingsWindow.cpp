@@ -208,21 +208,6 @@ void SettingsWindow::DrawProjectMSettingsTab()
             DoubleSetting("projectM.transitionDuration", 3.0, .0, 10.0);
 
             ImGui::TableNextRow();
-            LabelWithTooltip("Ambient Speed",
-                             "Slows down all preset animation evenly: motion, zoom, rotation, warp,\n"
-                             "fading trails and the reaction to the music.\n"
-                             "1 = normal speed, 0.5 = half speed, 0.1 = slowest. Left/Right arrow keys change it too.\n"
-                             "Display and transition durations stay in real seconds.");
-            DoubleSetting("projectM.ambientSpeed", 1.0, 0.1, 1.0);
-
-            ImGui::TableNextRow();
-            LabelWithTooltip("Same Speed at Any FPS",
-                             "Presets move as fast at any FPS as they do at 60 FPS.\n"
-                             "Off: presets move faster at higher FPS and slower at lower FPS,\n"
-                             "like in Milkdrop and the official projectM.");
-            BooleanSetting("projectM.fpsIndependentMotion", true);
-
-            ImGui::TableNextRow();
             LabelWithTooltip("Enable Hard Cuts",
                              "Enables beat-driven, fast preset changes.\nSensitivity and earliest switch time can be configured separately.");
             BooleanSetting("projectM.hardCutsEnabled", false);
@@ -236,18 +221,6 @@ void SettingsWindow::DrawProjectMSettingsTab()
             LabelWithTooltip("  Hard Cut Threshold",
                              "Volume difference between measurements required to trigger a hard cut.\nHigher values mean fewer hard cuts.");
             DoubleSetting("projectM.hardCutSensitivity", 1.0, 0.0, 10.0);
-
-            ImGui::TableNextRow();
-            LabelWithTooltip("Aspect Correction",
-                             "Enables aspect ration correction in presets.\nOnly affects presets using the aspect ratio variables.");
-            BooleanSetting("projectM.aspectCorrectionEnabled", true);
-
-            ImGui::TableNextRow();
-            LabelWithTooltip("Per-Point Mesh Size X/Y",
-                             "Size of the per-point transformation grid.\nHigher values produce better quality, but require exponentially more CPU time to calculate.\nMilkdrop's default is 48x36.");
-            // Built-in defaults below match the shipped projectMSDL.properties and the defaults used in
-            // ProjectMWrapper/SDLRenderingWindow, so the displayed value is the one actually in use.
-            IntegerSettingVec("projectM.meshX", "projectM.meshY", 96, 54, 8, 300);
 
             ImGui::EndTable();
         }
@@ -270,7 +243,7 @@ void SettingsWindow::DrawWindowSettingsTab()
 
             ImGui::TableNextRow();
             LabelWithTooltip("Window Placement",
-                             "Window size, position and monitor. Changes apply immediately and are also used when starting projectM.\nClick the button to copy the current window size, position and display to the settings.");
+                             "Window size, position and monitor. Changes apply immediately and are also used when starting projectM.\nIn fullscreen, size and position apply when you leave fullscreen; a monitor change moves it right away.\nClick the button to copy the current window size, position and display to the settings.");
             ImGui::TableSetColumnIndex(1);
             if (ImGui::Button("Use Current Size and Position"))
             {
@@ -410,7 +383,7 @@ void SettingsWindow::DrawWindowSettingsTab()
 
 void SettingsWindow::DrawEffectsSettingsTab()
 {
-    if (ImGui::BeginTabItem("Effects / Spout"))
+    if (ImGui::BeginTabItem("Effects"))
     {
         if (ImGui::BeginTable("projectM", 5, ImGuiTableFlags_None))
         {
@@ -435,23 +408,33 @@ void SettingsWindow::DrawEffectsSettingsTab()
                              "+/- keys change it too. Also applies to the Spout output.");
             DoubleSetting("effects.zoom", 1.0, OutputEffects::MinZoom, OutputEffects::MaxZoom);
 
-#ifdef _WIN32
             ImGui::TableNextRow();
-            LabelWithTooltip("Spout Output",
-                             "Shares the picture with other programs via Spout, e.g. OBS with the obs-spout2-plugin\n"
-                             "(add a \"Spout2 Capture\" source and pick \"projectM\").\n"
-                             "Keeps working while projectM is minimized or covered, and contains no menus, toasts or FPS counter.");
-            BooleanSetting("output.spout.enabled", false);
+            LabelWithTooltip("Ambient Speed",
+                             "Slows down all preset animation evenly: motion, zoom, rotation, warp,\n"
+                             "fading trails and the reaction to the music.\n"
+                             "1 = normal speed, 0.5 = half speed, 0.1 = slowest. Left/Right arrow keys change it too.\n"
+                             "Display and transition durations stay in real seconds.");
+            DoubleSetting("projectM.ambientSpeed", 1.0, 0.1, 1.0);
 
-            ImGui::BeginDisabled(!_effectiveConfiguration->getBool("output.spout.enabled", false));
             ImGui::TableNextRow();
-            LabelWithTooltip("  Spout Resolution",
-                             "Size of the Spout picture in pixels, e.g. 1920 x 1080. 0 x 0 = same as the window.\n"
-                             "projectM renders at this size. The window then shows the same picture scaled to fit,\n"
-                             "with black bars if the window has a different shape.");
-            IntegerSettingVec("output.spout.width", "output.spout.height", 0, 0, 0, 7680);
-            ImGui::EndDisabled();
-#endif
+            LabelWithTooltip("Same Speed at Any FPS",
+                             "Presets move as fast at any FPS as they do at 60 FPS.\n"
+                             "Off: presets move faster at higher FPS and slower at lower FPS,\n"
+                             "like in Milkdrop and the official projectM.");
+            BooleanSetting("projectM.fpsIndependentMotion", true);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Aspect Correction",
+                             "Enables aspect ration correction in presets.\nOnly affects presets using the aspect ratio variables.");
+            BooleanSetting("projectM.aspectCorrectionEnabled", true);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Per-Point Mesh Size X/Y",
+                             "Size of the per-point transformation grid.\nHigher values produce better quality, but require exponentially more CPU time to calculate.\nMilkdrop's default is 48x36.");
+            // Built-in defaults below match the shipped projectMSDL.properties and the defaults used in
+            // ProjectMWrapper/SDLRenderingWindow, so the displayed value is the one actually in use.
+            IntegerSettingVec("projectM.meshX", "projectM.meshY", 96, 54, 8, 300);
+
 
             ImGui::EndTable();
         }
@@ -461,7 +444,12 @@ void SettingsWindow::DrawEffectsSettingsTab()
 
 void SettingsWindow::DrawRemoteSettingsTab()
 {
-    if (ImGui::BeginTabItem("Remote Control"))
+#ifdef _WIN32
+    const char* tabName = "Remote / Spout###RemoteTab";
+#else
+    const char* tabName = "Remote Control###RemoteTab";
+#endif
+    if (ImGui::BeginTabItem(tabName))
     {
         if (ImGui::BeginTable("projectM", 5, ImGuiTableFlags_None))
         {
@@ -525,6 +513,37 @@ void SettingsWindow::DrawRemoteSettingsTab()
                 ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", "Set a password to allow other devices.");
             }
         }
+
+#ifdef _WIN32
+        ImGui::SeparatorText("Spout output (OBS)");
+        if (ImGui::BeginTable("spout", 5, ImGuiTableFlags_None))
+        {
+            ImGui::TableSetupColumn("##desc", ImGuiTableColumnFlags_WidthFixed, .0f);
+            ImGui::TableSetupColumn("##setting", ImGuiTableColumnFlags_WidthStretch, .0f);
+            ImGui::TableSetupColumn("##choose", ImGuiTableColumnFlags_WidthFixed, ButtonColumnWidth("..."));
+            ImGui::TableSetupColumn("##reset", ImGuiTableColumnFlags_WidthFixed, ButtonColumnWidth("Reset"));
+            ImGui::TableSetupColumn("##override", ImGuiTableColumnFlags_WidthFixed, .0f);
+
+            ImGui::TableNextRow();
+            LabelWithTooltip("Spout Output",
+                             "Shares the picture with other programs via Spout, e.g. OBS with the obs-spout2-plugin\n"
+                             "(add a \"Spout2 Capture\" source and pick \"projectM\").\n"
+                             "Keeps working while projectM is minimized or covered, and contains no menus, toasts or FPS counter.");
+            BooleanSetting("output.spout.enabled", false);
+
+            ImGui::BeginDisabled(!_effectiveConfiguration->getBool("output.spout.enabled", false));
+            ImGui::TableNextRow();
+            LabelWithTooltip("  Spout Resolution",
+                             "Size of the Spout picture in pixels, e.g. 1920 x 1080. 0 x 0 = same as the window.\n"
+                             "projectM renders at this size. The window then shows the same picture scaled to fit,\n"
+                             "with black bars if the window has a different shape.");
+            IntegerSettingVec("output.spout.width", "output.spout.height", 0, 0, 0, 7680);
+            ImGui::EndDisabled();
+
+
+            ImGui::EndTable();
+        }
+#endif
 
         ImGui::EndTabItem();
     }
@@ -649,63 +668,42 @@ void SettingsWindow::DrawHelpTab() const
 
         const auto& defaultConfigurationPath = ProjectMSDLApplication::instance().DefaultConfigurationPath();
 
-        ImGui::SeparatorText("General");
+        ImGui::SeparatorText("Settings");
         ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Hover over a setting's name to see a short description.");
+        ImGui::TextWrapped("%s", "Hover over a setting's name to see what it does.");
         ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Changes take effect immediately, except settings marked with * which are only used when projectM starts.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "A red [!] marks a setting that was passed on the command line. The command-line value is used for as long as projectM runs, regardless of what is set here.");
+        ImGui::TextWrapped("%s", "Changes apply immediately. Settings marked * are used at the next start. A red [!] means the value was set on the command line, which wins while projectM runs.");
 
         ImGui::SeparatorText("Saving");
         ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Changes only last until projectM is closed unless you click \"Save Settings\". The window title shows [CHANGED - NOT SAVED] while there are unsaved changes.");
+        ImGui::TextWrapped("%s", "Click \"Save Settings\" to keep changes after projectM closes, including those made with keys, the Options menu or the remote control. Changes made in this window also show [CHANGED - NOT SAVED] in the title.");
         ImGui::Bullet();
-        ImGui::TextWrapped("Your settings are saved to projectMSDL.properties in \"%s\".",
-                           userDataDir.c_str());
+        ImGui::TextWrapped("Saved in: %s", userDataDir.c_str());
         ImGui::Bullet();
         if (ProjectMSDLApplication::instance().Portable())
         {
-            ImGui::TextWrapped("%s", "Portable mode is on (portable.txt is next to the executable), so settings and favorites are kept in the \"userdata\" folder next to it. Delete portable.txt to use the normal user folder instead.");
+            ImGui::TextWrapped("%s", "Portable mode is on (portable.txt next to the program). Delete portable.txt to use the normal user folder.");
         }
         else
         {
-            ImGui::TextWrapped("%s", "To keep settings and favorites next to the executable instead (portable mode), create an empty file named portable.txt next to it.");
+            ImGui::TextWrapped("%s", "Portable mode is off. Put a file named portable.txt next to the program to keep settings and favorites there.");
         }
 
-        ImGui::SeparatorText("Number settings");
+        ImGui::SeparatorText("Number boxes");
         ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Type a value, then press Enter or click the \"Apply\" button next to it.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Values that are typed but not applied yet are highlighted in orange. Tab or clicking elsewhere keeps them without applying, e.g. to type width and height and then apply both.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "While typing, Up/Down step the value (hold Shift for 10x steps). Escape cancels the typed value.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Values outside the allowed range are clamped to the nearest limit.");
+        ImGui::TextWrapped("%s", "Type a value, then press Enter or click Apply. Orange = typed, not applied yet. Up/Down step the value (Shift: x10), Esc cancels, Tab moves on without applying.");
 
-        ImGui::SeparatorText("Defaults and Reset");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "\"Reset\" appears only for settings whose value differs from the default. Click it to go back to the default value.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Changing a setting back to its default value has the same effect as clicking \"Reset\".");
+        ImGui::SeparatorText("Defaults");
         ImGui::Bullet();
         if (!defaultConfigurationPath.empty())
         {
-            ImGui::TextWrapped("Default values come from the application's configuration file \"%s\", or from built-in defaults for settings it doesn't contain.",
+            ImGui::TextWrapped("\"Reset\" appears when a value differs from its default. Defaults come from %s.",
                                defaultConfigurationPath.c_str());
         }
         else
         {
-            ImGui::TextWrapped("%s", "No application configuration file (projectMSDL.properties next to or above the executable) was found, so built-in defaults are used.");
+            ImGui::TextWrapped("%s", "\"Reset\" appears when a value differs from its default. No projectMSDL.properties was found next to the program, so built-in defaults are used.");
         }
-
-        ImGui::SeparatorText("Window placement");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "Window size, position and monitor apply immediately and are also used on the next start. In fullscreen, size and position are applied when leaving fullscreen, while a monitor change moves the fullscreen window right away.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "\"Use Current Size and Position\" copies the window's current size, position and monitor into the settings.");
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", "A borderless window is always kept fully on its monitor. Otherwise Windows may show it at the monitor corner while the window is somewhere else, which offsets the mouse.");
 
         ImGui::EndTabItem();
     }
