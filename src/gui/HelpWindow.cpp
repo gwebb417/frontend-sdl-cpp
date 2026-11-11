@@ -170,7 +170,7 @@ void HelpWindow::FillKeyboardShortcutsTable()
 {
     // Pairs of (key, action). Settings explain themselves in their tooltips, so this only lists the keys.
     _shortcuts = {
-        {"Presets (hold Shift with N, P, R, Backspace or Enter for a smooth transition)",
+        {"Presets (with Shift: smooth transition)",
          {{"N / P", "Next / previous preset"},
           {"R", "Random preset"},
           {"Backspace", "Back to the last played preset"},
@@ -191,12 +191,13 @@ void HelpWindow::FillKeyboardShortcutsTable()
           {"M", "Mirror mode"},
           {"+ / -", "Zoom"},
           {"A", "Aspect correction"},
-          {"Shift+Left Click / Middle Click", "Add waveform / clear waveforms"}}},
+          {"Shift+Left Click", "Add a waveform"},
+          {"Middle Click", "Clear added waveforms"}}},
 
         {"Window and Program",
          {{"Esc", "Menu on/off"},
           {"Ctrl+S", "Settings"},
-          {"Ctrl+F / Right Click", "Fullscreen"},
+          {"Ctrl+F", "Fullscreen (also Right Click)"},
           {"Ctrl+M", "Next monitor"},
           {"Ctrl+I", "Next audio device"},
           {"Ctrl+C", "Copy preset path"},
