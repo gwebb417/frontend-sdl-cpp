@@ -1,0 +1,35 @@
+diff --git a/src/libprojectM/Renderer/TextureManager.cpp b/src/libprojectM/Renderer/TextureManager.cpp
+index 9def56c..28285f5 100644
+--- a/src/libprojectM/Renderer/TextureManager.cpp
++++ b/src/libprojectM/Renderer/TextureManager.cpp
+@@ -175,14 +175,15 @@ auto TextureManager::TryLoadingTexture(const std::string& name) -> TextureSample
+     ScanTextures();
+ 
+     std::string lowerCaseUnqualifiedName = Utils::ToLower(unqualifiedName);
+-    for (const auto& file : m_scannedTextureFiles)
++    for (auto file = m_scannedTextureFiles.begin(); file != m_scannedTextureFiles.end();)
+     {
+-        if (file.lowerCaseBaseName != lowerCaseUnqualifiedName)
++        if (file->lowerCaseBaseName != lowerCaseUnqualifiedName)
+         {
++            ++file;
+             continue;
+         }
+ 
+-        auto texture = LoadTexture(file);
++        auto texture = LoadTexture(*file);
+ 
+         if (texture)
+         {
+@@ -191,6 +192,11 @@ auto TextureManager::TryLoadingTexture(const std::string& name) -> TextureSample
+ #endif
+             return {texture, m_samplers.at({wrapMode, filterMode}), name, unqualifiedName};;
+         }
++
++        // projectMSDL fork patch (from iceyaye/projectm): forget files that failed to load.
++        // Some presets request their textures every frame (custom shapes once per instance), and
++        // decoding a broken file again each time can stall rendering. The next preset load rescans.
++        file = m_scannedTextureFiles.erase(file);
+     }
+ 
+ #ifdef DEBUG

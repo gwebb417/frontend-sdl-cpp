@@ -1,0 +1,344 @@
+diff --git a/src/api/include/projectM-4/parameters.h b/src/api/include/projectM-4/parameters.h
+index af5f4a8..c879945 100644
+--- a/src/api/include/projectM-4/parameters.h
++++ b/src/api/include/projectM-4/parameters.h
+@@ -90,6 +90,18 @@ PROJECTM_EXPORT void projectm_set_band_frequencies(projectm_handle instance, flo
+                                                    float mid_low, float mid_high,
+                                                    float treble_low, float treble_high);
+ 
++/**
++ * @brief Sets which effects are used for smooth preset transitions (projectMSDL fork patch).
++ *
++ * One bit per effect: 1 = Circle, 2 = Plasma, 4 = Fade (simple blend), 8 = Sweep, 16 = Warp,
++ * 32 = Zoom Blur, 64 = Beat Pulse, 128 = Datamosh. Each transition picks one of the enabled effects
++ * at random. 0 (the default) = all effects.
++ *
++ * @param instance The projectM instance handle.
++ * @param effects Bit mask of enabled effects.
++ */
++PROJECTM_EXPORT void projectm_set_transition_effects(projectm_handle instance, uint32_t effects);
++
+ /**
+  * @brief Sets the preset animation speed (projectMSDL fork patch).
+  *
+diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+index d6f5661..4e0a029 100644
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -234,6 +234,7 @@ void ProjectM::Initialize()
+     m_textureManager = std::make_unique<Renderer::TextureManager>(m_textureSearchPaths);
+ 
+     m_transitionShaderManager = std::make_unique<Renderer::TransitionShaderManager>();
++    m_transitionShaderManager->SetEnabledEffects(m_transitionEffects);
+ 
+     m_textureCopier = std::make_unique<Renderer::CopyTexture>();
+ 
+@@ -344,6 +345,15 @@ void ProjectM::SetBandFrequencies(float sampleRate, const float* hz)
+     m_audioStorage.SetBandFrequencies(sampleRate, hz);
+ }
+ 
++void ProjectM::SetTransitionEffects(uint32_t mask)
++{
++    m_transitionEffects = mask;
++    if (m_transitionShaderManager)
++    {
++        m_transitionShaderManager->SetEnabledEffects(mask);
++    }
++}
++
+ void ProjectM::SetAnimationSpeed(float speed)
+ {
+     m_animationSpeed = std::min(std::max(0.0f, speed), 4.0f);
+diff --git a/src/libprojectM/ProjectM.hpp b/src/libprojectM/ProjectM.hpp
+index e40c888..5e79f1d 100644
+--- a/src/libprojectM/ProjectM.hpp
++++ b/src/libprojectM/ProjectM.hpp
+@@ -114,6 +114,8 @@ public:
+ 
+     void SetBandSensitivity(float bass, float mid, float treble);
+ 
++    void SetTransitionEffects(uint32_t mask);
++
+     void SetBandFrequencies(float sampleRate, const float* hz);
+ 
+     void SetAnimationSpeed(float speed);
+@@ -214,6 +216,7 @@ private:
+     float m_midSensitivity{1.0};     //!< Mid sensitivity, multiplies m_beatSensitivity (projectMSDL fork patch).
+     float m_trebleSensitivity{1.0};  //!< Treble sensitivity, multiplies m_beatSensitivity (projectMSDL fork patch).
+     float m_animationSpeed{1.0};     //!< Preset animation speed (projectMSDL fork patch).
++    uint32_t m_transitionEffects{0}; //!< Enabled transition effects bit mask, 0 = all (projectMSDL fork patch).
+     float m_motionReferenceFps{0.0}; //!< FPS at which per-frame motion runs at normal speed, 0 = per frame (projectMSDL fork patch).
+     bool m_aspectCorrection{true};   //!< If true, corrects aspect ratio for non-rectangular windows.
+     float m_easterEgg{1.0};          //!< Random preset duration modifier. See TimeKeeper class.
+diff --git a/src/libprojectM/ProjectMCWrapper.cpp b/src/libprojectM/ProjectMCWrapper.cpp
+index de7550c..b62c3b2 100644
+--- a/src/libprojectM/ProjectMCWrapper.cpp
++++ b/src/libprojectM/ProjectMCWrapper.cpp
+@@ -205,6 +205,12 @@ void projectm_set_band_frequencies(projectm_handle instance, float sample_rate,
+     projectMInstance->SetBandFrequencies(sample_rate, hz);
+ }
+ 
++void projectm_set_transition_effects(projectm_handle instance, uint32_t effects)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    projectMInstance->SetTransitionEffects(effects);
++}
++
+ void projectm_set_animation_speed(projectm_handle instance, float speed)
+ {
+     auto projectMInstance = handle_to_instance(instance);
+diff --git a/src/libprojectM/Renderer/CMakeLists.txt b/src/libprojectM/Renderer/CMakeLists.txt
+index 672c026..7f7d9b9 100644
+--- a/src/libprojectM/Renderer/CMakeLists.txt
++++ b/src/libprojectM/Renderer/CMakeLists.txt
+@@ -5,6 +5,8 @@ set(TRANSITION_SHADER_FILES
+         TransitionShaders/TransitionShaderBuiltInSweepGlsl330.frag
+         TransitionShaders/TransitionShaderBuiltInWarpGlsl330.frag
+         TransitionShaders/TransitionShaderBuiltInZoomBlurGlsl330.frag
++        TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag
++        TransitionShaders/TransitionShaderBuiltInDatamoshGlsl330.frag
+         TransitionShaders/TransitionVertexShaderGlsl330.vert
+         TransitionShaders/TransitionShaderHeaderGlsl330.frag
+         TransitionShaders/TransitionShaderMainGlsl330.frag
+diff --git a/src/libprojectM/Renderer/TransitionShaderManager.cpp b/src/libprojectM/Renderer/TransitionShaderManager.cpp
+index 28ea1fb..b2d2f43 100644
+--- a/src/libprojectM/Renderer/TransitionShaderManager.cpp
++++ b/src/libprojectM/Renderer/TransitionShaderManager.cpp
+@@ -13,19 +13,45 @@ TransitionShaderManager::TransitionShaderManager()
+                            CompileTransitionShader(kTransitionShaderBuiltInSimpleBlendGlsl330),
+                            CompileTransitionShader(kTransitionShaderBuiltInSweepGlsl330),
+                            CompileTransitionShader(kTransitionShaderBuiltInWarpGlsl330),
+-                           CompileTransitionShader(kTransitionShaderBuiltInZoomBlurGlsl330)})
++                           CompileTransitionShader(kTransitionShaderBuiltInZoomBlurGlsl330),
++                           // projectMSDL fork patch: two more effects from C06alt1/projectm_ext.
++                           CompileTransitionShader(kTransitionShaderBuiltInBeatPulseGlsl330),
++                           CompileTransitionShader(kTransitionShaderBuiltInDatamoshGlsl330)})
+     , m_mersenneTwister(m_randomDevice())
+ {
+ }
+ 
+ auto TransitionShaderManager::RandomTransition() -> std::shared_ptr<Shader>
+ {
+-    if (m_transitionShaders.empty())
++    // projectMSDL fork patch: pick only from the enabled effects that compiled. If none of the
++    // enabled ones are usable (or the mask is 0), pick from all usable effects, so transitions never stop.
++    std::vector<size_t> usable;
++    std::vector<size_t> enabled;
++    for (size_t index = 0; index < m_transitionShaders.size(); index++)
++    {
++        if (!m_transitionShaders[index])
++        {
++            continue;
++        }
++        usable.push_back(index);
++        if (index < 32 && (m_enabledEffects & (1u << index)) != 0)
++        {
++            enabled.push_back(index);
++        }
++    }
++
++    const auto& candidates = enabled.empty() ? usable : enabled;
++    if (candidates.empty())
+     {
+         return {};
+     }
+ 
+-    return m_transitionShaders.at(m_mersenneTwister() % m_transitionShaders.size());
++    return m_transitionShaders.at(candidates.at(m_mersenneTwister() % candidates.size()));
++}
++
++void TransitionShaderManager::SetEnabledEffects(uint32_t mask)
++{
++    m_enabledEffects = mask;
+ }
+ 
+ auto TransitionShaderManager::CompileTransitionShader(const std::string& shaderBodyCode) -> std::shared_ptr<Shader>
+diff --git a/src/libprojectM/Renderer/TransitionShaderManager.hpp b/src/libprojectM/Renderer/TransitionShaderManager.hpp
+index cc5c3b0..45ea316 100644
+--- a/src/libprojectM/Renderer/TransitionShaderManager.hpp
++++ b/src/libprojectM/Renderer/TransitionShaderManager.hpp
+@@ -2,7 +2,9 @@
+ 
+ #include "Renderer/Shader.hpp"
+ 
++#include <cstdint>
+ #include <random>
++#include <vector>
+ 
+ namespace libprojectM {
+ namespace Renderer {
+@@ -21,6 +23,12 @@ public:
+      */
+     auto RandomTransition() -> std::shared_ptr<Shader>;
+ 
++    /**
++     * @brief Sets which transition effects RandomTransition() picks from (projectMSDL fork patch).
++     * @param mask One bit per effect, in the order of projectm_set_transition_effects(). 0 = all.
++     */
++    void SetEnabledEffects(uint32_t mask);
++
+ private:
+     /**
+      * @brief Compiles a single transition shader program.
+@@ -29,6 +37,7 @@ private:
+     static auto CompileTransitionShader(const std::string& shaderBodyCode) -> std::shared_ptr<Shader>;
+ 
+     std::vector<std::shared_ptr<Shader>> m_transitionShaders; //!< Currently loaded and compiled transition shaders.
++    uint32_t m_enabledEffects{0}; //!< Bit mask of effects to pick from, 0 = all (projectMSDL fork patch).
+ 
+     std::random_device m_randomDevice; //!< Seed for the random number generator
+     std::mt19937 m_mersenneTwister; //!< Random engine to select shader
+diff --git a/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag b/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag
+new file mode 100644
+index 0000000..b407490
+--- /dev/null
++++ b/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag
+@@ -0,0 +1,78 @@
++// "Beat Pulse" transition from C06alt1/projectm_ext (LGPL-2.1), added by the projectMSDL fork patch.
++// Helper function for procedural Voronoi cell generation
++vec2 fractureHash(vec2 p) {
++    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
++    return fract(sin(p) * 43758.5453) * 2.0 - 1.0;
++}
++
++float voronoiCells(vec2 p, float scale, float progress) {
++    p *= scale;
++    vec2 p_i = floor(p);
++    vec2 p_f = fract(p);
++    float minDist = 1.0;
++    
++    for (int j = -1; j <= 1; j++) {
++        for (int i = -1; i <= 1; i++) {
++            vec2 neighbor = vec2(float(i), float(j));
++            vec2 point = fractureHash(p_i + neighbor);
++            // Gentle organic movement driven by progress
++            point = 0.5 + 0.5 * sin((progress * 6.2831) + 6.2831 * point);
++            vec2 diff = neighbor + point - p_f;
++            float dist = length(diff);
++            minDist = min(minDist, dist);
++        }
++    }
++    return minDist;
++}
++
++void mainImage( out vec4 fragColor, in vec2 fragCoord )
++{
++    vec2 uv = fragCoord / iResolution.xy;
++    
++    // Correct aspect ratio cleanly using wrapper resolution
++    float aspect = iResolution.x / (iResolution.y + 0.0001);
++    vec2 aspectUv = uv;
++    aspectUv.x *= aspect;
++
++    // Use smooth progression
++    float progress = smoothstep(0.0, 1.0, iProgressCosine);
++    float bassImpact = max(0.0, iBeatValues.x - 1.0) * 0.3;
++
++    // Expand bubble cells as the transition progresses
++    float cellScale = 3.5 + (4.0 * progress); 
++    float cellMask = voronoiCells(aspectUv, cellScale, progress);
++    
++    // SAFE NORMALIZATION: Prevents divide-by-zero NaN black screens at screen center
++    vec2 dir = uv - vec2(0.5, 0.5);
++    float len = length(dir);
++    vec2 explosionDir = (len > 0.0001) ? (dir / len) : vec2(0.0, 1.0);
++    
++    // Outward displacement vector
++    float pushSpeed = progress * (0.8 + bassImpact * 1.5);
++    vec2 warpedUv = uv + (explosionDir * cellMask * pushSpeed * 0.3);
++
++    // Sample outgoing and incoming scenes
++    vec3 sceneOut = texture(iChannel0, warpedUv).xyz;
++    vec3 sceneIn  = texture(iChannel1, uv).xyz;
++    
++    // --- KEY FIX: Smooth Alpha Dissolve ---
++    // Instead of a hard step(), we calculate a smooth opacity curve for each bubble.
++    // As progress increases, the threshold tightens, causing the bubbles to dissolve
++    // smoothly from their outer boundaries inward toward their centers.
++    float fadeThreshold = 0.8 * (1.0 - progress);
++    float bubbleOpacity = smoothstep(fadeThreshold + 0.2, fadeThreshold, cellMask);
++    
++    // Global fade-out modifier to ensure complete transparency by the end of the transition
++    float globalFade = 1.0 - smoothstep(0.6, 0.98, progress);
++    float finalAlpha = clamp(bubbleOpacity * globalFade, 0.0, 1.0);
++
++    // Soft glow along the dissolving bubble rims
++    // float rimHighlight = smoothstep(fadeThreshold + 0.1, fadeThreshold, cellMask) - finalAlpha;
++    // vec3 softCyanGlow = vec3(0.1, 0.7, 0.9);
++    // sceneOut += max(0.0, rimHighlight) * softCyanGlow * 0.5;
++
++    // Smooth composite between incoming background and dissolving outgoing bubbles
++    vec3 finalColor = mix(sceneIn, sceneOut, finalAlpha);
++
++    fragColor = vec4(finalColor, 1.0);
++}
+diff --git a/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInDatamoshGlsl330.frag b/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInDatamoshGlsl330.frag
+new file mode 100644
+index 0000000..7fabebd
+--- /dev/null
++++ b/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInDatamoshGlsl330.frag
+@@ -0,0 +1,64 @@
++// "Datamosh" transition from C06alt1/projectm_ext (LGPL-2.1), added by the projectMSDL fork patch.
++void mainImage( out vec4 fragColor, in vec2 fragCoord )
++{
++    vec2 uv = fragCoord / iResolution.xy;
++    
++    // Normalized transition progress (0.0 to 1.0)
++    float progress = smoothstep(0.0, 1.0, iProgressCosine);
++    
++    // 1. ORBITAL ANCHOR (Translating Milkdrop cx/cy sin/cos equations)
++    // As the crossfade progresses, the zoom anchor orbits in a figure-8 arc off-center.
++    // This creates the sweeping, directional drag current across the screen.
++    vec2 dragCenter = vec2(
++        0.5 + sin(progress * 5.0) * 0.6,
++        0.5 + cos(progress * 3.5) * 0.6
++    );
++    
++    vec2 sampleUv = uv;
++    vec3 smearedColor = texture(iChannel0, uv).xyz;
++    
++    // Dynamically increase the length of the drag smear as progress advances
++    int maxIterations = int(mix(4.0, 20.0, progress));
++    
++    // 2. UNROLLED FEEDBACK LOOP (Translating decay=1.0 & zoom=1.009)
++    for (int i = 0; i < 20; i++) 
++    {
++        if (i >= maxIterations) break;
++        
++        // Calculate vector from the shifting orbital anchor point
++        vec2 offset = sampleUv - dragCenter;
++        
++        // Milkdrop zoom=1.009 equivalent: calculate outward expansion per step.
++        // Brighter pixels (smearedColor.x) drag slightly faster to create dynamic streaks.
++        float outwardZoom = 1.0 + (0.008 + (smearedColor.x * 0.015)) * (progress * 1.5);
++        
++        // Milkdrop rot equivalent: subtle rotational twist along the drag path
++        float twist = (smearedColor.y - 0.5) * 0.04 * progress;
++        float s = sin(twist);
++        float c = cos(twist);
++        offset = vec2(offset.x * c - offset.y * s, offset.x * s + offset.y * c);
++        
++        // Divide by outwardZoom to push pixel coordinate sampling outward
++        sampleUv = dragCenter + (offset / outwardZoom);
++        
++        // Clamp strictly inside [0.001, 0.999] to prevent black texture border bleeding
++        sampleUv = clamp(sampleUv, 0.001, 0.999);
++        
++        // Sample the next step along the coordinate trail
++        vec3 trailSample = texture(iChannel0, sampleUv).xyz;
++        
++        // Accumulate highlights along the trail (simulating decay = 1.0 persistence)
++        smearedColor = mix(smearedColor, trailSample, 0.65);
++    }
++    
++    // Sample the clean incoming video frame
++    vec3 incomingScene = texture(iChannel1, uv).xyz;
++    
++    // 3. CLEAN REVEAL CUT
++    // Let the melting outgoing frame drag aggressively across the screen for 85% of the transition,
++    // then rapidly dissolve into the clean incoming frame so the crossfade resolves perfectly.
++    float finalCut = smoothstep(0.85, 0.98, progress);
++    vec3 finalOutput = mix(smearedColor, incomingScene, finalCut);
++    
++    fragColor = vec4(finalOutput, 1.0);
++}

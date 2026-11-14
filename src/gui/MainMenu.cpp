@@ -187,6 +187,25 @@ void MainMenu::Draw()
                 app.UserConfiguration()->setBool("projectM.fpsIndependentMotion", !fpsIndependentMotion);
             }
 
+            if (ImGui::BeginMenu("Transition Effects"))
+            {
+                // Keep the menu open, so several effects can be toggled in a row.
+                ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
+                auto current = app.config().getString("projectM.transitionEffects", "all");
+                for (const auto& effect : ProjectMWrapper::TransitionEffectNames())
+                {
+                    bool enabled = _projectMWrapper.TransitionEffectEnabled(effect.first);
+                    if (ImGui::MenuItem(effect.second.c_str(), "", enabled))
+                    {
+                        app.UserConfiguration()->setString("projectM.transitionEffects",
+                                                           ProjectMWrapper::TransitionEffectsWith(current, effect.first, !enabled));
+                        current = app.config().getString("projectM.transitionEffects", "all");
+                    }
+                }
+                ImGui::PopItemFlag();
+                ImGui::EndMenu();
+            }
+
             ImGui::Separator();
 
             if (ImGui::BeginMenu("Mirror (M)"))

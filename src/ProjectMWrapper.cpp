@@ -11,6 +11,7 @@
 #include <Poco/Path.h>
 #include <Poco/RecursiveDirectoryIterator.h>
 #include <Poco/String.h>
+#include <Poco/StringTokenizer.h>
 
 #include <SDL2/SDL_opengl.h>
 
@@ -89,6 +90,7 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
         ApplyBeatSensitivity();
         ApplyAnimationSpeed();
         ApplyBandFrequencies();
+        ApplyTransitionEffects();
 
         if (!texturePaths.empty())
         {
@@ -1287,6 +1289,126 @@ void ProjectMWrapper::OnConfigurationPropertyRemoved(const std::string& key)
     {
         ApplyBandFrequencies();
     }
+
+    if (key == "projectM.transitionEffects")
+    {
+        ApplyTransitionEffects();
+    }
+}
+
+const std::vector<std::pair<std::string, std::string>>& ProjectMWrapper::TransitionEffectNames()
+{
+    // Same order as the bits of projectm_set_transition_effects().
+    static const std::vector<std::pair<std::string, std::string>> names{
+        {"circle", "Circle"},
+        {"plasma", "Plasma"},
+        {"fade", "Fade"},
+        {"sweep", "Sweep"},
+        {"warp", "Warp"},
+        {"zoomblur", "Zoom Blur"},
+        {"beatpulse", "Beat Pulse"},
+        {"datamosh", "Datamosh"}};
+    return names;
+}
+
+namespace {
+
+/**
+ * @brief Splits "all" or a comma-separated list of transition effect keys into keys (all keys for "all").
+ */
+std::vector<std::string> TransitionEffectKeys(const std::string& value)
+{
+    std::vector<std::string> keys;
+    const auto& names = ProjectMWrapper::TransitionEffectNames();
+    auto trimmed = Poco::toLower(Poco::trim(value));
+    if (trimmed.empty() || trimmed == "all")
+    {
+        for (const auto& name : names)
+        {
+            keys.push_back(name.first);
+        }
+        return keys;
+    }
+
+    Poco::StringTokenizer tokens(trimmed, ",", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
+    for (const auto& token : tokens)
+    {
+        for (const auto& name : names)
+        {
+            if (name.first == token && std::find(keys.begin(), keys.end(), token) == keys.end())
+            {
+                keys.push_back(token);
+            }
+        }
+    }
+    return keys;
+}
+
+} // namespace
+
+bool ProjectMWrapper::TransitionEffectEnabled(const std::string& key) const
+{
+    auto keys = TransitionEffectKeys(_projectMConfigView->getString("transitionEffects", "all"));
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
+std::string ProjectMWrapper::TransitionEffectsWith(const std::string& current, const std::string& key, bool enabled)
+{
+    auto keys = TransitionEffectKeys(current);
+    auto position = std::find(keys.begin(), keys.end(), key);
+    if (enabled && position == keys.end())
+    {
+        keys.push_back(key);
+    }
+    else if (!enabled && position != keys.end())
+    {
+        if (keys.size() == 1)
+        {
+            Poco::NotificationCenter::defaultCenter().postNotification(
+                new Notification::DisplayToast("At least one transition effect must stay on"));
+            return current;
+        }
+        keys.erase(position);
+    }
+
+    const auto& names = TransitionEffectNames();
+    if (keys.size() >= names.size())
+    {
+        return "all";
+    }
+
+    // Keep the list in the standard order, so the stored value doesn't depend on the click order.
+    std::string result;
+    for (const auto& name : names)
+    {
+        if (std::find(keys.begin(), keys.end(), name.first) != keys.end())
+        {
+            result += (result.empty() ? "" : ",") + name.first;
+        }
+    }
+    return result;
+}
+
+void ProjectMWrapper::ApplyTransitionEffects()
+{
+    auto keys = TransitionEffectKeys(_projectMConfigView->getString("transitionEffects", "all"));
+    const auto& names = TransitionEffectNames();
+
+    uint32_t mask{0};
+    for (size_t bit = 0; bit < names.size(); bit++)
+    {
+        if (std::find(keys.begin(), keys.end(), names[bit].first) != keys.end())
+        {
+            mask |= 1u << bit;
+        }
+    }
+
+    // All effects (or none, from a hand-edited config) = 0, libprojectM's "use all".
+    if (mask == (1u << names.size()) - 1)
+    {
+        mask = 0;
+    }
+    projectm_set_transition_effects(_projectM, mask);
 }
 
 void ProjectMWrapper::ApplyBandFrequencies()

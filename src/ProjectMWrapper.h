@@ -114,6 +114,28 @@ public:
     void ApplyBandFrequencies();
 
     /**
+     * @brief Pairs of (config key, display name) of all transition effects, in libprojectM's bit order.
+     */
+    static const std::vector<std::pair<std::string, std::string>>& TransitionEffectNames();
+
+    /**
+     * @brief Returns true if the given transition effect (config key) is used for smooth transitions.
+     */
+    bool TransitionEffectEnabled(const std::string& key) const;
+
+    /**
+     * @brief Turns one transition effect on or off (stored in projectM.transitionEffects).
+     * Turning off the last one is refused with a toast, since at least one effect must stay on.
+     * @return The new list for projectM.transitionEffects ("all" or comma-separated keys).
+     */
+    static std::string TransitionEffectsWith(const std::string& current, const std::string& key, bool enabled);
+
+    /**
+     * @brief Passes the enabled transition effects to projectM (our libprojectM patch transition-effects.patch).
+     */
+    void ApplyTransitionEffects();
+
+    /**
      * @brief Returns the libprojectM version this application was built against.
      * @return A string with the libprojectM build version.
      */

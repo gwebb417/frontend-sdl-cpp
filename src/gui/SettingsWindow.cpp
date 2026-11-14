@@ -208,6 +208,14 @@ void SettingsWindow::DrawProjectMSettingsTab()
             DoubleSetting("projectM.transitionDuration", 3.0, .0, 10.0);
 
             ImGui::TableNextRow();
+            LabelWithTooltip("  Transition Effects",
+                             "Effects used for smooth transitions. Each transition picks one of the checked effects at random.\n"
+                             "Fade is a plain crossfade. Beat Pulse dissolves the old preset in bubbles that react to the bass,\n"
+                             "Datamosh drags the old picture along a moving path like a video glitch.\n"
+                             "At least one effect stays on. Hard cuts never use an effect.");
+            TransitionEffectsSetting();
+
+            ImGui::TableNextRow();
             LabelWithTooltip("Enable Hard Cuts",
                              "Enables beat-driven, fast preset changes.\nSensitivity and earliest switch time can be configured separately.");
             BooleanSetting("projectM.hardCutsEnabled", false);
@@ -546,6 +554,38 @@ void SettingsWindow::DrawRemoteSettingsTab()
 #endif
 
         ImGui::EndTabItem();
+    }
+}
+
+void SettingsWindow::TransitionEffectsSetting()
+{
+    const std::string property = "projectM.transitionEffects";
+    ImGui::TableSetColumnIndex(1);
+
+    auto current = _effectiveConfiguration->getString(property, "all");
+    const auto& names = ProjectMWrapper::TransitionEffectNames();
+    auto& projectMWrapper = Poco::Util::Application::instance().getSubsystem<ProjectMWrapper>();
+
+    // Four per line, so the list stays compact.
+    for (size_t index = 0; index < names.size(); index++)
+    {
+        if (index % 4 != 0)
+        {
+            ImGui::SameLine();
+        }
+        bool enabled = projectMWrapper.TransitionEffectEnabled(names[index].first);
+        if (ImGui::Checkbox((names[index].second + "##transition_" + names[index].first).c_str(), &enabled))
+        {
+            StoreSetting(property, ProjectMWrapper::TransitionEffectsWith(current, names[index].first, enabled), "all");
+            current = _effectiveConfiguration->getString(property, "all");
+        }
+    }
+
+    ResetButton(property, "all");
+
+    if (_commandLineConfiguration->has(property))
+    {
+        OverriddenSettingMarker();
     }
 }
 

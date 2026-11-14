@@ -101,6 +101,10 @@ projectM.meshY = 54
 # Transition time in seconds for soft cuts
 projectM.transitionDuration = 3
 
+# Effects used for soft cuts, one is picked at random for each transition: "all", or a comma-separated list of
+# circle, plasma, fade, sweep, warp, zoomblur, beatpulse, datamosh (e.g. "fade,sweep,beatpulse").
+projectM.transitionEffects = all
+
 # Slows down all preset animation evenly: 1 = normal speed, 0.5 = half speed, 0.1 = slowest.
 # Display and transition durations stay in real seconds.
 projectM.ambientSpeed = 1.0

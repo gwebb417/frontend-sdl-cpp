@@ -2,7 +2,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO projectM-visualizer/projectm
     REF "v${VERSION}"
-    SHA512 "dbb3088c5a0db9eaabd4d2c3232df2dd939a4b1ce5928916a63e7b10cd4321b749d779a5e39a883a12318c613f91f3b4241973958edf52291d53e1b3dc348c77"
+    SHA512 "8b3bb6c0503493fbef455b644e57f4f8c56a92f4217f6914baacb19222412a45a5b45531e22609c81f479c46776164103450e3873f121dc859dc023a8139ae4d"
     HEAD_REF master
     PATCHES
         macos-pkgconfig.patch
@@ -10,6 +10,8 @@ vcpkg_from_github(
         animation-speed.patch # projectMSDL fork: animation speed + frame-rate independent motion
         band-sensitivity.patch # projectMSDL fork: separate bass/mid/treble sensitivity
         render-fbo.patch # projectMSDL fork: projectm_opengl_render_frame_fbo() (backport from 4.2) for Spout/effects
+        failed-texture-retry.patch # projectMSDL fork: don't decode a broken texture file again every frame
+        transition-effects.patch # projectMSDL fork: choose transition effects, Beat Pulse + Datamosh from C06alt1/projectm_ext
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS

@@ -22,7 +22,7 @@ on:
       projectMref:
         description: "libprojectM Git reference (tag, branch or commit). Same version as the Windows build (vcpkg)."
         required: true
-        default: "v4.1.7"
+        default: "v4.1.8"
         type: string
       pocoref:
         description: "POCO Git reference (tag, branch or commit)"
@@ -90,10 +90,10 @@ jobs:
           path: frontend-sdl2
           submodules: recursive
 
-      # Same patches as the Windows build (vcpkg overlay port, same order): beat sensitivity, animation speed, band sensitivity, render to FBO.
+      # Same patches as the Windows build (vcpkg overlay port, same order): beat sensitivity, animation speed, band sensitivity, render to FBO, failed texture retry, transition effects.
       - name: Patch libprojectM
         run: |
-          for patch in beat-sensitivity.patch animation-speed.patch band-sensitivity.patch render-fbo.patch; do
+          for patch in beat-sensitivity.patch animation-speed.patch band-sensitivity.patch render-fbo.patch failed-texture-retry.patch transition-effects.patch; do
             git -C projectm apply --verbose "$GITHUB_WORKSPACE/frontend-sdl2/vcpkg-overlay/ports/projectm/$patch"
           done
 

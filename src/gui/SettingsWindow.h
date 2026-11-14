@@ -62,6 +62,11 @@ private:
     void PasswordSetting(const std::string& property);
 
     /**
+     * @brief Displays one checkbox per transition effect (projectM.transitionEffects).
+     */
+    void TransitionEffectsSetting();
+
+    /**
      * @brief Draws the help tab.
      */
     void DrawHelpTab() const;
