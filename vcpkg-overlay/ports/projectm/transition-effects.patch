@@ -100,6 +100,30 @@ index 672c026..7f7d9b9 100644
          TransitionShaders/TransitionVertexShaderGlsl330.vert
          TransitionShaders/TransitionShaderHeaderGlsl330.frag
          TransitionShaders/TransitionShaderMainGlsl330.frag
+diff --git a/src/libprojectM/Renderer/PresetTransition.cpp b/src/libprojectM/Renderer/PresetTransition.cpp
+index 2a27f00..11d1278 100644
+--- a/src/libprojectM/Renderer/PresetTransition.cpp
++++ b/src/libprojectM/Renderer/PresetTransition.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "TextureManager.hpp"
+ 
++#include <algorithm>
+ #include <array>
+ #include <cmath>
+ #include <cstddef>
+@@ -63,7 +64,10 @@ void PresetTransition::Draw(const Preset& oldPreset,
+ 
+     if (m_durationSeconds > 0.0)
+     {
+-        linearProgress = secondsSinceStart / m_durationSeconds;
++        // projectMSDL fork patch: capped at 1. A frame drawn late at the end of the transition (e.g. while the
++        // new preset compiles its shaders) gave values above 1, where the cosine and bicubic curves turn back
++        // and the effect briefly reappeared.
++        linearProgress = std::min(std::max(secondsSinceStart / m_durationSeconds, 0.0), 1.0);
+         cosineProgress = (-std::cos(linearProgress * PI) + 1.0) * 0.5;
+         bicubicProgress = linearProgress < 0.5 ? 4.0 * linearProgress * linearProgress * linearProgress : 1.0 - pow(-2.0 * linearProgress + 2.0, 3.0) / 2.0;
+     }
 diff --git a/src/libprojectM/Renderer/TransitionShaderManager.cpp b/src/libprojectM/Renderer/TransitionShaderManager.cpp
 index 28ea1fb..b2d2f43 100644
 --- a/src/libprojectM/Renderer/TransitionShaderManager.cpp
@@ -190,10 +214,10 @@ index cc5c3b0..45ea316 100644
      std::mt19937 m_mersenneTwister; //!< Random engine to select shader
 diff --git a/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag b/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag
 new file mode 100644
-index 0000000..b407490
+index 0000000..dd0c060
 --- /dev/null
 +++ b/src/libprojectM/Renderer/TransitionShaders/TransitionShaderBuiltInBeatPulseGlsl330.frag
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,79 @@
 +// "Beat Pulse" transition from C06alt1/projectm_ext (LGPL-2.1), added by the projectMSDL fork patch.
 +// Helper function for procedural Voronoi cell generation
 +vec2 fractureHash(vec2 p) {
@@ -259,7 +283,8 @@ index 0000000..b407490
 +    float bubbleOpacity = smoothstep(fadeThreshold + 0.2, fadeThreshold, cellMask);
 +    
 +    // Global fade-out modifier to ensure complete transparency by the end of the transition
-+    float globalFade = 1.0 - smoothstep(0.6, 0.98, progress);
++    // projectMSDL fork: fully gone at 90% (was 98%), so no bubble centers are left at the end.
++    float globalFade = 1.0 - smoothstep(0.5, 0.9, progress);
 +    float finalAlpha = clamp(bubbleOpacity * globalFade, 0.0, 1.0);
 +
 +    // Soft glow along the dissolving bubble rims
