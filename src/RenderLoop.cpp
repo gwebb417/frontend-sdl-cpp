@@ -388,7 +388,11 @@ RemoteControl::Result RenderLoop::ExecuteRemoteCommand(const RemoteControl::Comm
     else if (action == "beat-sensitivity")
     {
         double value{};
-        if (number(value) && !_projectMWrapper.BeatAveragingEnabled())
+        if (_projectMWrapper.BeatAveragingEnabled())
+        {
+            toast("Beat Sensitivity is off while Beat Averaging is on");
+        }
+        else if (number(value))
         {
             value = std::clamp(std::round(value * 100.0) / 100.0, 0.0, 2.0);
             userConfig->setDouble("projectM.beatSensitivity", value);
@@ -434,7 +438,7 @@ RemoteControl::Result RenderLoop::ExecuteRemoteCommand(const RemoteControl::Comm
         const auto& wanted = command.value;
         if (wanted != "all" && wanted != "favorites" && wanted != "disabled")
         {
-            known = false;
+            // No toast: reported as an invalid value below.
         }
         else if (wanted == current)
         {
@@ -568,7 +572,8 @@ RemoteControl::Result RenderLoop::ExecuteRemoteCommand(const RemoteControl::Comm
     }
     if (toasts.empty())
     {
-        return {false, "Not changed"};
+        // The commands toast whatever they do, so no toast means the value wasn't valid.
+        return {false, command.value.empty() ? std::string("Not changed") : "Invalid value: " + command.value};
     }
     // Toasts that explain why something wasn't done are reported as failures.
     const auto& message = toasts.back();
