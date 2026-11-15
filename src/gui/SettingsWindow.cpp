@@ -216,6 +216,12 @@ void SettingsWindow::DrawProjectMSettingsTab()
             TransitionEffectsSetting();
 
             ImGui::TableNextRow();
+            LabelWithTooltip("Preload Next Preset",
+                             "Loads the next preset a few seconds before the switch, so the switch doesn't stutter\n"
+                             "while the graphics driver compiles the preset's shaders.");
+            BooleanSetting("projectM.preloadPresets", true);
+
+            ImGui::TableNextRow();
             LabelWithTooltip("Enable Hard Cuts",
                              "Enables beat-driven, fast preset changes.\nSensitivity and earliest switch time can be configured separately.");
             BooleanSetting("projectM.hardCutsEnabled", false);

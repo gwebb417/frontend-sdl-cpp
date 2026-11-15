@@ -12,6 +12,8 @@ vcpkg_from_github(
         render-fbo.patch # projectMSDL fork: projectm_opengl_render_frame_fbo() (backport from 4.2) for Spout/effects
         failed-texture-retry.patch # projectMSDL fork: don't decode a broken texture file again every frame
         transition-effects.patch # projectMSDL fork: choose transition effects, Beat Pulse + Datamosh from C06alt1/projectm_ext
+        load-timings.patch # projectMSDL fork: timings of each preset load, logged by the app
+        preset-preload.patch # projectMSDL fork: load the next preset ahead, shaders compiled in the background
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS

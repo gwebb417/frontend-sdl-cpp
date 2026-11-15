@@ -59,6 +59,8 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
         }
         auto texturePaths = GetPathListWithDefault("texturePath", applicationSubDir("textures"));
 
+        EnableParallelShaderCompile();
+
         _projectM = projectm_create();
         if (!_projectM)
         {
@@ -172,6 +174,33 @@ void ProjectMWrapper::UpdateRealFPS(float fps) const
     projectm_set_fps(_projectM, static_cast<uint32_t>(std::round(fps)));
 }
 
+void ProjectMWrapper::EnableParallelShaderCompile()
+{
+    // With GL_KHR_parallel_shader_compile, the driver compiles shaders on its own threads, so preloaded
+    // presets compile in the background (libprojectM patch preset-preload.patch). Use as many threads as
+    // the driver allows.
+    using MaxShaderCompilerThreadsFunc = void(APIENTRY*)(GLuint);
+    MaxShaderCompilerThreadsFunc maxThreads{nullptr};
+    if (SDL_GL_ExtensionSupported("GL_KHR_parallel_shader_compile"))
+    {
+        maxThreads = reinterpret_cast<MaxShaderCompilerThreadsFunc>(SDL_GL_GetProcAddress("glMaxShaderCompilerThreadsKHR"));
+    }
+    else if (SDL_GL_ExtensionSupported("GL_ARB_parallel_shader_compile"))
+    {
+        maxThreads = reinterpret_cast<MaxShaderCompilerThreadsFunc>(SDL_GL_GetProcAddress("glMaxShaderCompilerThreadsARB"));
+    }
+
+    if (maxThreads != nullptr)
+    {
+        maxThreads(0xFFFFFFFF);
+        poco_information(_logger, "Parallel shader compiling is available: presets are preloaded in the background.");
+    }
+    else
+    {
+        poco_information(_logger, "Parallel shader compiling is not available: preloaded presets compile in one frame.");
+    }
+}
+
 void ProjectMWrapper::RenderFrame(unsigned int framebufferObject)
 {
     glClearColor(0.0, 0.0, 0.0, 0.0);
@@ -205,6 +234,15 @@ void ProjectMWrapper::RenderFrame(unsigned int framebufferObject)
             projectm_pcm_add_float(_projectM, _audioStagingBuffer.data(), _audioStagingBuffer.size() / _audioChannels, static_cast<projectm_channels>(_audioChannels));
             _audioStagingBuffer.clear();
         }
+    }
+
+    // Preload the next preset a little after the transition ended (libprojectM patch preset-preload.patch),
+    // so the switch doesn't stutter while the driver compiles the shaders.
+    if (_playlist && _projectMConfigView->getBool("preloadPresets", true))
+    {
+        double displayDuration = _projectMConfigView->getDouble("displayDuration", 30.0);
+        double delay = std::min(TransitionDuration() + 2.0, std::max(1.0, displayDuration - 5.0));
+        _playlist->UpdatePreload(_projectM, delay);
     }
 
     // projectM may switch presets automatically (preset duration, hard cuts) while rendering.

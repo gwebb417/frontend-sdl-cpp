@@ -1,0 +1,214 @@
+diff --git a/src/api/include/projectM-4/parameters.h b/src/api/include/projectM-4/parameters.h
+index c879945..da26be6 100644
+--- a/src/api/include/projectM-4/parameters.h
++++ b/src/api/include/projectM-4/parameters.h
+@@ -102,6 +102,25 @@ PROJECTM_EXPORT void projectm_set_band_frequencies(projectm_handle instance, flo
+  */
+ PROJECTM_EXPORT void projectm_set_transition_effects(projectm_handle instance, uint32_t effects);
+ 
++/**
++ * @brief Timings of the last preset load in milliseconds (projectMSDL fork patch).
++ */
++typedef struct projectm_preset_load_timings {
++    double file_ms;             //!< Reading and setting up the preset (incl. shader preprocessing).
++    double expressions_ms;      //!< Compiling the expressions and running the init code.
++    double shader_translate_ms; //!< Translating the warp and composite shaders from HLSL to GLSL.
++    double shader_compile_ms;   //!< Compiling and linking the shaders in the graphics driver.
++    double initial_image_ms;    //!< Drawing the previous preset's image into the new one.
++    double total_ms;            //!< The whole load.
++} projectm_preset_load_timings;
++
++/**
++ * @brief Returns the timings of the last preset load (projectMSDL fork patch).
++ * @param instance The projectM instance handle.
++ * @param timings Receives the timings.
++ */
++PROJECTM_EXPORT void projectm_get_last_preset_load_timings(projectm_handle instance, projectm_preset_load_timings* timings);
++
+ /**
+  * @brief Sets the preset animation speed (projectMSDL fork patch).
+  *
+diff --git a/src/libprojectM/MilkdropPreset/MilkdropPreset.cpp b/src/libprojectM/MilkdropPreset/MilkdropPreset.cpp
+index e311cf0..dd65871 100755
+--- a/src/libprojectM/MilkdropPreset/MilkdropPreset.cpp
++++ b/src/libprojectM/MilkdropPreset/MilkdropPreset.cpp
+@@ -19,6 +19,7 @@
+  *
+  */
+ 
++#include "PresetLoadTimings.hpp"
+ #include "MilkdropPreset.hpp"
+ 
+ #include "Factory.hpp"
+@@ -61,7 +62,10 @@ void MilkdropPreset::Initialize(const Renderer::RenderContext& renderContext)
+     m_state.renderContext = renderContext;
+ 
+     // Initialize variables and code now we have a proper render state.
+-    CompileCodeAndRunInitExpressions();
++    {
++        ScopedLoadTimer expressionsTimer(PresetLoadTimings::Last().expressionsMs);
++        CompileCodeAndRunInitExpressions();
++    }
+ 
+     // Update framebuffer and texture sizes if needed
+     m_framebuffer.SetSize(renderContext.viewportSizeX, renderContext.viewportSizeY);
+diff --git a/src/libprojectM/MilkdropPreset/MilkdropShader.cpp b/src/libprojectM/MilkdropPreset/MilkdropShader.cpp
+index fa769d5..b74f847 100644
+--- a/src/libprojectM/MilkdropPreset/MilkdropShader.cpp
++++ b/src/libprojectM/MilkdropPreset/MilkdropShader.cpp
+@@ -1,3 +1,6 @@
++#include "PresetLoadTimings.hpp"
++
++#include <chrono>
+ #include "MilkdropShader.hpp"
+ 
+ #include "PerFrameContext.hpp"
+@@ -595,6 +598,9 @@ void MilkdropShader::GetReferencedSamplers(const std::string& program)
+ 
+ void MilkdropShader::TranspileHLSLShader(const PresetState& presetState, std::string& program)
+ {
++    // projectMSDL fork patch: time translation and driver compilation separately.
++    auto translateStart = std::chrono::steady_clock::now();
++
+     std::string shaderTypeString = "composite";
+     if (m_type == ShaderType::WarpShader)
+     {
+@@ -675,6 +681,9 @@ void MilkdropShader::TranspileHLSLShader(const PresetState& presetState, std::st
+         throw Renderer::ShaderException("Error translating HLSL " + shaderTypeString + " shader: GLSL generating failed.\nSource:\n" + sourcePreprocessed);
+     }
+ 
++    PresetLoadTimings::Last().shaderTranslateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - translateStart).count();
++    ScopedLoadTimer compileTimer(PresetLoadTimings::Last().shaderCompileMs);
++
+     // Now we have GLSL source for the preset shader program (hopefully it's valid!)
+     // Compile the preset shader fragment shader with the standard vertex shader and cross our fingers.
+     if (m_type == ShaderType::WarpShader)
+diff --git a/src/libprojectM/PresetLoadTimings.hpp b/src/libprojectM/PresetLoadTimings.hpp
+new file mode 100644
+index 0000000..75e1301
+--- /dev/null
++++ b/src/libprojectM/PresetLoadTimings.hpp
+@@ -0,0 +1,49 @@
++#pragma once
++
++// projectMSDL fork patch: timings of the last preset load, to find what makes preset switches stutter.
++
++#include <chrono>
++
++namespace libprojectM {
++
++struct PresetLoadTimings {
++    double fileMs{};            //!< Reading and setting up the preset (incl. shader preprocessing).
++    double expressionsMs{};     //!< Compiling the expressions and running the init code.
++    double shaderTranslateMs{}; //!< Translating the warp and composite shaders from HLSL to GLSL.
++    double shaderCompileMs{};   //!< Compiling and linking the shaders in the graphics driver.
++    double initialImageMs{};    //!< Drawing the previous preset's image into the new one.
++    double totalMs{};           //!< The whole load.
++
++    static auto Last() -> PresetLoadTimings&
++    {
++        static PresetLoadTimings timings;
++        return timings;
++    }
++};
++
++/**
++ * @brief Adds the time since construction to a timing value when destroyed.
++ */
++class ScopedLoadTimer
++{
++public:
++    explicit ScopedLoadTimer(double& target)
++        : m_target(target)
++        , m_start(std::chrono::steady_clock::now())
++    {
++    }
++
++    ~ScopedLoadTimer()
++    {
++        m_target += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m_start).count();
++    }
++
++    ScopedLoadTimer(const ScopedLoadTimer&) = delete;
++    ScopedLoadTimer& operator=(const ScopedLoadTimer&) = delete;
++
++private:
++    double& m_target;
++    std::chrono::steady_clock::time_point m_start;
++};
++
++} // namespace libprojectM
+diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+index 4e0a029..34fa6c3 100644
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -23,6 +23,7 @@
+ 
+ #include "Preset.hpp"
+ #include "PresetFactoryManager.hpp"
++#include "PresetLoadTimings.hpp"
+ #include "TimeKeeper.hpp"
+ 
+ #include <Audio/PCM.hpp>
+@@ -55,10 +56,20 @@ void ProjectM::PresetSwitchFailedEvent(const std::string&, const std::string&) c
+ 
+ void ProjectM::LoadPresetFile(const std::string& presetFilename, bool smoothTransition)
+ {
++    // projectMSDL fork patch: measure the load, see PresetLoadTimings.
++    auto& timings = PresetLoadTimings::Last();
++    timings = PresetLoadTimings{};
++    ScopedLoadTimer totalTimer(timings.totalMs);
++
+     try
+     {
+         m_textureManager->PurgeTextures();
+-        StartPresetTransition(m_presetFactoryManager->CreatePresetFromFile(presetFilename), !smoothTransition);
++        std::unique_ptr<Preset> preset;
++        {
++            ScopedLoadTimer fileTimer(timings.fileMs);
++            preset = m_presetFactoryManager->CreatePresetFromFile(presetFilename);
++        }
++        StartPresetTransition(std::move(preset), !smoothTransition);
+     }
+     catch (const std::exception& ex)
+     {
+@@ -281,6 +292,7 @@ void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hard
+ 
+     if (m_activePreset)
+     {
++        ScopedLoadTimer imageTimer(PresetLoadTimings::Last().initialImageMs);
+         preset->DrawInitialImage(m_activePreset->OutputTexture(), GetRenderContext());
+     }
+ 
+diff --git a/src/libprojectM/ProjectMCWrapper.cpp b/src/libprojectM/ProjectMCWrapper.cpp
+index b62c3b2..3a34cc9 100644
+--- a/src/libprojectM/ProjectMCWrapper.cpp
++++ b/src/libprojectM/ProjectMCWrapper.cpp
+@@ -1,4 +1,5 @@
+ #include "ProjectMCWrapper.hpp"
++#include "PresetLoadTimings.hpp"
+ 
+ #include <projectM-4/projectM.h>
+ 
+@@ -211,6 +212,21 @@ void projectm_set_transition_effects(projectm_handle instance, uint32_t effects)
+     projectMInstance->SetTransitionEffects(effects);
+ }
+ 
++void projectm_get_last_preset_load_timings(projectm_handle /* instance */, projectm_preset_load_timings* timings)
++{
++    if (timings == nullptr)
++    {
++        return;
++    }
++    const auto& last = libprojectM::PresetLoadTimings::Last();
++    timings->file_ms = last.fileMs;
++    timings->expressions_ms = last.expressionsMs;
++    timings->shader_translate_ms = last.shaderTranslateMs;
++    timings->shader_compile_ms = last.shaderCompileMs;
++    timings->initial_image_ms = last.initialImageMs;
++    timings->total_ms = last.totalMs;
++}
++
+ void projectm_set_animation_speed(projectm_handle instance, float speed)
+ {
+     auto projectMInstance = handle_to_instance(instance);

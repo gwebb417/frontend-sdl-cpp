@@ -16,6 +16,8 @@
 #include <Poco/NotificationCenter.h>
 #include <Poco/Path.h>
 
+#include <SDL2/SDL_timer.h>
+
 POCO_IMPLEMENT_EXCEPTION(PlaylistEmptyException, Poco::Exception, "PlaylistEmptyException")
 
 PresetPlaylist::Item::Item(std::string path)
@@ -138,6 +140,25 @@ void PresetPlaylist::Random(bool hardCut)
         return;
     }
 
+    // Use the preset chosen ahead and preloaded by UpdatePreload(), if it's still valid.
+    auto current = projectm_playlist_get_position(_projectMPlaylist);
+    uint32_t index;
+    if (_upcomingRandomIndex >= 0 && _upcomingRandomIndex < size && static_cast<uint32_t>(_upcomingRandomIndex) != current)
+    {
+        index = static_cast<uint32_t>(_upcomingRandomIndex);
+    }
+    else
+    {
+        index = PickRandomIndex(size);
+    }
+    _upcomingRandomIndex = -1;
+
+    BeginPresetSwitch();
+    projectm_playlist_set_position(_projectMPlaylist, index, hardCut);
+}
+
+uint32_t PresetPlaylist::PickRandomIndex(uint32_t size)
+{
     // The playlist library's shuffle picks from all presets, including the current one, so with only a
     // few presets (e.g. favorites) it often "switched" to the same preset again. Pick any other preset.
     auto current = projectm_playlist_get_position(_projectMPlaylist);
@@ -147,9 +168,88 @@ void PresetPlaylist::Random(bool hardCut)
     {
         index++;
     }
+    return index;
+}
 
-    BeginPresetSwitch();
-    projectm_playlist_set_position(_projectMPlaylist, index, hardCut);
+void PresetPlaylist::UpdatePreload(projectm* projectMHandle, double delaySeconds)
+{
+    if (projectMHandle == nullptr || _projectMPlaylist == nullptr)
+    {
+        return;
+    }
+
+    auto now = SDL_GetTicks64();
+
+    // Log once when the driver has finished compiling the preloaded preset's shaders.
+    if (_preloadTicks != 0 && projectm_preloaded_preset_ready(projectMHandle))
+    {
+        _preloadReadyMs = static_cast<double>(now - _preloadTicks);
+        _preloadTicks = 0;
+    }
+
+    if (_preloadDone || _lastSwitchTicks == 0 || now - _lastSwitchTicks < static_cast<uint64_t>(delaySeconds * 1000.0))
+    {
+        return;
+    }
+    _preloadDone = true;
+
+    // No automatic switches while the preset is locked.
+    if (projectm_get_preset_locked(projectMHandle))
+    {
+        _preloadDone = false;
+        return;
+    }
+
+    auto size = projectm_playlist_size(_projectMPlaylist);
+    if (size < 2)
+    {
+        return;
+    }
+
+    uint32_t index;
+    if (_shuffle)
+    {
+        auto current = projectm_playlist_get_position(_projectMPlaylist);
+        if (_upcomingRandomIndex < 0 || _upcomingRandomIndex >= size || static_cast<uint32_t>(_upcomingRandomIndex) == current)
+        {
+            _upcomingRandomIndex = PickRandomIndex(size);
+        }
+        index = static_cast<uint32_t>(_upcomingRandomIndex);
+    }
+    else
+    {
+        index = projectm_playlist_get_position(_projectMPlaylist) + 1;
+        if (index >= size)
+        {
+            index = 0;
+        }
+    }
+
+    // The filename exactly as the playlist library will load it.
+    auto items = projectm_playlist_items(_projectMPlaylist, index, 1);
+    if (items == nullptr || items[0] == nullptr)
+    {
+        projectm_playlist_free_string_array(items);
+        return;
+    }
+    std::string filename(items[0]);
+    projectm_playlist_free_string_array(items);
+
+    // Keep the last switch's timings for the log, the preload replaces them only temporarily.
+    _preloadReadyMs = -1.0;
+    if (projectm_preload_preset_file(projectMHandle, filename.c_str()))
+    {
+        _preloadTicks = SDL_GetTicks64();
+        if (_preloadTicks == 0)
+        {
+            _preloadTicks = 1;
+        }
+        poco_debug(_logger, "Preloaded next preset: " + Poco::Path(filename).getBaseName());
+    }
+    else
+    {
+        poco_debug(_logger, "Could not preload next preset: " + Poco::Path(filename).getBaseName());
+    }
 }
 
 void PresetPlaylist::PresetSwitchRequestedEvent(bool isHardCut, void* context)
@@ -454,11 +554,43 @@ void PresetPlaylist::PresetSwitchedEvent(bool /* isHardCut */, unsigned int inde
     }
     that->_presetSwitchResolved = true;
 
+    // The next preset is preloaded a few seconds after this switch, see UpdatePreload().
+    that->_lastSwitchTicks = SDL_GetTicks64();
+    that->_preloadDone = false;
+
     if (index < that->_items.size())
     {
         that->_currentIndex = index;
-        poco_information_f1(that->_logger, "Displaying preset: %s", that->CurrentItem().PresetName());
+
+        // Where the time of the preset switch went (our libprojectM patches load-timings.patch and
+        // preset-preload.patch).
+        projectm_preset_load_timings timings{};
+        projectm_get_last_preset_load_timings(nullptr, &timings);
+        if (timings.preloaded)
+        {
+            std::string readyText = that->_preloadReadyMs >= 0.0
+                                        ? Poco::format("ready after %.0f ms", that->_preloadReadyMs)
+                                        : std::string("not ready yet");
+            poco_information(that->_logger, Poco::format(
+                                                "Displaying preset: %s (preloaded, switch took %.0f ms incl. %.0f ms waiting for the driver; "
+                                                "preload took %.0f ms: file %.0f, expressions %.0f, shader translation %.0f, "
+                                                "shader compile %.0f, %s)",
+                                                that->CurrentItem().PresetName(), timings.switch_ms, timings.wait_ms,
+                                                timings.total_ms, timings.file_ms, timings.expressions_ms,
+                                                timings.shader_translate_ms, timings.shader_compile_ms, readyText));
+        }
+        else
+        {
+            poco_information(that->_logger, Poco::format(
+                                                "Displaying preset: %s (loaded in %.0f ms: file %.0f, expressions %.0f, "
+                                                "shader translation %.0f, shader compile %.0f, first image %.0f)",
+                                                that->CurrentItem().PresetName(), timings.total_ms, timings.file_ms,
+                                                timings.expressions_ms, timings.shader_translate_ms,
+                                                timings.shader_compile_ms, timings.initial_image_ms));
+        }
     }
+    that->_preloadTicks = 0;
+    that->_preloadReadyMs = -1.0;
 
     Poco::NotificationCenter::defaultCenter().postNotification(new Notification::UpdateWindowTitle);
 }

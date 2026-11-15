@@ -3,6 +3,7 @@
 #include <Poco/Exception.h>
 #include <Poco/Logger.h>
 
+#include <cstdint>
 #include <random>
 #include <string>
 #include <vector>
@@ -162,6 +163,16 @@ public:
     {
         _presetSwitchResolved = false;
     }
+
+    /**
+     * @brief Preloads the preset the next automatic switch will play, once per preset (libprojectM patch
+     *        preset-preload.patch). Call once per frame, outside of rendering.
+     *
+     * With shuffle on, the random choice is made now and used by the next Random() call.
+     * @param projectMHandle The projectM instance.
+     * @param delaySeconds Seconds after a preset switch before the next preset is preloaded.
+     */
+    void UpdatePreload(projectm* projectMHandle, double delaySeconds);
 
     [[nodiscard]] const Item& CurrentItem() const
     {
@@ -343,6 +354,11 @@ private:
      */
     void SendPlaylistChangedNotification() const;
 
+    /**
+     * @brief Picks a random preset other than the current one.
+     */
+    uint32_t PickRandomIndex(uint32_t size);
+
     projectm_playlist* _projectMPlaylist{nullptr}; //!< The projectM-managed playlist (temporary).
     ItemList::size_type _currentIndex{}; //!< The currently active playlist index.
     ItemList _items; //!< All presets in the current playlist
@@ -352,6 +368,13 @@ private:
     bool _presetSwitchResolved{false}; //!< True once the current preset switch (incl. retries) has a result, see BeginPresetSwitch().
 
     std::mt19937 _randomGenerator{std::random_device{}()}; //!< For picking random presets.
+
+    // Preset preloading, see UpdatePreload().
+    int64_t _upcomingRandomIndex{-1};        //!< Random preset chosen ahead for the next Random() call, -1 if none.
+    uint64_t _lastSwitchTicks{0};            //!< SDL ticks of the last preset switch.
+    bool _preloadDone{false};                //!< True once the next preset was preloaded (or failed) since the last switch.
+    uint64_t _preloadTicks{0};               //!< SDL ticks when the preload started, 0 when its shaders are ready.
+    double _preloadReadyMs{-1.0};            //!< Milliseconds from the preload until the driver finished compiling.
 
     Poco::Logger& _logger{Poco::Logger::get("PresetPlaylist")}; //!< The class logger.
 };

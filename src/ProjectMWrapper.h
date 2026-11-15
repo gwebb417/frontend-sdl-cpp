@@ -228,6 +228,11 @@ private:
     double TransitionDuration() const;
 
     /**
+     * @brief Lets the driver compile shaders on its own threads, if supported (GL_KHR_parallel_shader_compile).
+     */
+    void EnableParallelShaderCompile();
+
+    /**
      * @brief Returns the folder disabled presets are moved to ("disabled" in the user data folder).
      */
     std::string DisabledPath() const;

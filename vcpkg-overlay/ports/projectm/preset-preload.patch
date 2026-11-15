@@ -1,0 +1,607 @@
+diff --git a/src/api/include/projectM-4/core.h b/src/api/include/projectM-4/core.h
+index 59fc294..53ecc15 100644
+--- a/src/api/include/projectM-4/core.h
++++ b/src/api/include/projectM-4/core.h
+@@ -68,6 +68,37 @@ PROJECTM_EXPORT void projectm_destroy(projectm_handle instance);
+  * @param filename The preset filename or URL to load.
+  * @param smooth_transition If true, the new preset is smoothly blended over.
+  */
++/**
++ * @brief Loads a preset ahead of time, so switching to it later doesn't stutter (projectMSDL fork patch).
++ *
++ * The preset is read and initialized now, and the graphics driver compiles its shaders in the background
++ * if it supports GL_KHR_parallel_shader_compile. A later projectm_load_preset_file() call with the same
++ * filename uses the preloaded preset. Loading any other preset discards it. Only one preset is kept.
++ *
++ * Must be called from the thread owning the OpenGL context, like projectm_load_preset_file().
++ *
++ * @param instance The projectM instance handle.
++ * @param filename The preset filename to preload.
++ * @return True if the preset was preloaded, false if it failed to load.
++ */
++PROJECTM_EXPORT bool projectm_preload_preset_file(projectm_handle instance, const char* filename);
++
++/**
++ * @brief Returns true if a preloaded preset exists and its shaders are compiled (projectMSDL fork patch).
++ *
++ * Call once per frame after projectm_preload_preset_file(): the first call initializes the preset and
++ * starts compiling its shaders, so the preload is spread over two frames.
++ *
++ * @param instance The projectM instance handle.
++ */
++PROJECTM_EXPORT bool projectm_preloaded_preset_ready(projectm_handle instance);
++
++/**
++ * @brief Discards the preloaded preset, if any (projectMSDL fork patch).
++ * @param instance The projectM instance handle.
++ */
++PROJECTM_EXPORT void projectm_clear_preloaded_preset(projectm_handle instance);
++
+ PROJECTM_EXPORT void projectm_load_preset_file(projectm_handle instance, const char* filename,
+                                                bool smooth_transition);
+ 
+diff --git a/src/api/include/projectM-4/parameters.h b/src/api/include/projectM-4/parameters.h
+index da26be6..4891d01 100644
+--- a/src/api/include/projectM-4/parameters.h
++++ b/src/api/include/projectM-4/parameters.h
+@@ -112,6 +112,9 @@ typedef struct projectm_preset_load_timings {
+     double shader_compile_ms;   //!< Compiling and linking the shaders in the graphics driver.
+     double initial_image_ms;    //!< Drawing the previous preset's image into the new one.
+     double total_ms;            //!< The whole load.
++    bool preloaded;             //!< The preset was preloaded; the values above are from the preload.
++    double switch_ms;           //!< Preloaded: time the switch itself took.
++    double wait_ms;             //!< Preloaded: part of the switch spent waiting for the driver to finish compiling.
+ } projectm_preset_load_timings;
+ 
+ /**
+diff --git a/src/libprojectM/PresetLoadTimings.hpp b/src/libprojectM/PresetLoadTimings.hpp
+index 75e1301..d3da677 100644
+--- a/src/libprojectM/PresetLoadTimings.hpp
++++ b/src/libprojectM/PresetLoadTimings.hpp
+@@ -13,6 +13,9 @@ struct PresetLoadTimings {
+     double shaderCompileMs{};   //!< Compiling and linking the shaders in the graphics driver.
+     double initialImageMs{};    //!< Drawing the previous preset's image into the new one.
+     double totalMs{};           //!< The whole load.
++    bool preloaded{};           //!< The preset was preloaded; the values above are from the preload.
++    double switchMs{};          //!< Preloaded: time the switch itself took.
++    double waitMs{};            //!< Preloaded: part of the switch spent waiting for the driver to finish compiling.
+ 
+     static auto Last() -> PresetLoadTimings&
+     {
+diff --git a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+index 34fa6c3..69edd4b 100644
+--- a/src/libprojectM/ProjectM.cpp
++++ b/src/libprojectM/ProjectM.cpp
+@@ -28,7 +28,10 @@
+ 
+ #include <Audio/PCM.hpp>
+ 
++#include <chrono>
++
+ #include <Renderer/CopyTexture.hpp>
++#include <Renderer/Shader.hpp>
+ #include <Renderer/PresetTransition.hpp>
+ #include <Renderer/TextureManager.hpp>
+ #include <Renderer/TransitionShaderManager.hpp>
+@@ -56,6 +59,12 @@ void ProjectM::PresetSwitchFailedEvent(const std::string&, const std::string&) c
+ 
+ void ProjectM::LoadPresetFile(const std::string& presetFilename, bool smoothTransition)
+ {
++    // projectMSDL fork patch: use the preloaded preset if it is this one.
++    if (SwitchToPreloadedPreset(presetFilename, smoothTransition))
++    {
++        return;
++    }
++
+     // projectMSDL fork patch: measure the load, see PresetLoadTimings.
+     auto& timings = PresetLoadTimings::Last();
+     timings = PresetLoadTimings{};
+@@ -77,6 +86,155 @@ void ProjectM::LoadPresetFile(const std::string& presetFilename, bool smoothTran
+     }
+ }
+ 
++auto ProjectM::PreloadPresetFile(const std::string& presetFilename) -> bool
++{
++    ClearPreloadedPreset();
++
++    // The timers inside the preset write to PresetLoadTimings::Last(), keep the last switch's values there.
++    auto& timings = PresetLoadTimings::Last();
++    const auto lastSwitchTimings = timings;
++    timings = PresetLoadTimings{};
++
++    bool preloaded{false};
++    try
++    {
++        ScopedLoadTimer totalTimer(timings.totalMs);
++        m_textureManager->PurgeTextures();
++        std::unique_ptr<Preset> preset;
++        {
++            ScopedLoadTimer fileTimer(timings.fileMs);
++            preset = m_presetFactoryManager->CreatePresetFromFile(presetFilename);
++        }
++        if (preset)
++        {
++            // Initialized in the next frame, see ContinuePreload(), so the work is split over two frames.
++            m_preloadedPreset = std::move(preset);
++            m_preloadedPresetFile = presetFilename;
++            m_preloadNeedsInitialize = true;
++            preloaded = true;
++        }
++    }
++    catch (const std::exception&)
++    {
++        // Failed presets are reported when they are actually loaded.
++        ClearPreloadedPreset();
++    }
++
++    m_preloadTimings = timings;
++    m_preloadTimings.preloaded = true;
++    timings = lastSwitchTimings;
++    return preloaded;
++}
++
++auto ProjectM::ContinuePreload() -> bool
++{
++    if (!m_preloadedPreset || !m_preloadNeedsInitialize)
++    {
++        return m_preloadedPreset != nullptr;
++    }
++    m_preloadNeedsInitialize = false;
++
++    auto& timings = PresetLoadTimings::Last();
++    const auto lastSwitchTimings = timings;
++    timings = m_preloadTimings;
++
++    bool initialized{false};
++    try
++    {
++        ScopedLoadTimer totalTimer(timings.totalMs);
++        Renderer::Shader::BeginDeferredChecks(m_preloadedPrograms);
++        try
++        {
++            m_preloadedPreset->Initialize(GetRenderContext());
++        }
++        catch (...)
++        {
++            Renderer::Shader::EndDeferredChecks();
++            throw;
++        }
++        Renderer::Shader::EndDeferredChecks();
++        initialized = true;
++    }
++    catch (const std::exception&)
++    {
++        // Failed presets are reported when they are actually loaded.
++        ClearPreloadedPreset();
++    }
++
++    m_preloadTimings = timings;
++    timings = lastSwitchTimings;
++    return initialized;
++}
++
++auto ProjectM::PreloadedPresetReady() -> bool
++{
++    // The first call after PreloadPresetFile() does the second half of the preload.
++    if (m_preloadNeedsInitialize)
++    {
++        ContinuePreload();
++        return false;
++    }
++    return m_preloadedPreset != nullptr && Renderer::Shader::ProgramsReady(m_preloadedPrograms);
++}
++
++void ProjectM::ClearPreloadedPreset()
++{
++    m_preloadNeedsInitialize = false;
++    Renderer::Shader::ReleaseDeferredShaders(m_preloadedPrograms);
++    m_preloadedPreset.reset();
++    m_preloadedPrograms.clear();
++    m_preloadedPresetFile.clear();
++}
++
++auto ProjectM::SwitchToPreloadedPreset(const std::string& presetFilename, bool smoothTransition) -> bool
++{
++    if (!m_preloadedPreset)
++    {
++        return false;
++    }
++    if (presetFilename != m_preloadedPresetFile)
++    {
++        ClearPreloadedPreset();
++        return false;
++    }
++
++    // Switching before the second half of the preload ran: do it now.
++    if (!ContinuePreload())
++    {
++        return false;
++    }
++
++    auto preset = std::move(m_preloadedPreset);
++    auto programs = std::move(m_preloadedPrograms);
++    ClearPreloadedPreset();
++
++    auto& timings = PresetLoadTimings::Last();
++    timings = m_preloadTimings;
++    auto switchStart = std::chrono::steady_clock::now();
++
++    bool linked;
++    {
++        ScopedLoadTimer waitTimer(timings.waitMs);
++        linked = Renderer::Shader::ProgramsLinked(programs);
++    }
++    if (!linked)
++    {
++        // A shader failed to compile. A normal load handles that, e.g. with the fallback shaders.
++        return false;
++    }
++
++    try
++    {
++        StartPresetTransition(std::move(preset), !smoothTransition, true);
++    }
++    catch (const std::exception& ex)
++    {
++        PresetSwitchFailedEvent(presetFilename, ex.what());
++    }
++    timings.switchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - switchStart).count();
++    return true;
++}
++
+ void ProjectM::LoadPresetData(std::istream& presetData, bool smoothTransition)
+ {
+     try
+@@ -92,12 +250,14 @@ void ProjectM::LoadPresetData(std::istream& presetData, bool smoothTransition)
+ 
+ void ProjectM::SetTexturePaths(std::vector<std::string> texturePaths)
+ {
++    ClearPreloadedPreset(); // projectMSDL fork patch: it uses the old texture manager.
+     m_textureSearchPaths = std::move(texturePaths);
+     m_textureManager = std::make_unique<Renderer::TextureManager>(m_textureSearchPaths);
+ }
+ 
+ void ProjectM::ResetTextures()
+ {
++    ClearPreloadedPreset(); // projectMSDL fork patch: it uses the old texture manager.
+     m_textureManager = std::make_unique<Renderer::TextureManager>(m_textureSearchPaths);
+ }
+ 
+@@ -272,7 +432,7 @@ void ProjectM::SetWindowSize(uint32_t width, uint32_t height)
+     m_windowHeight = height;
+ }
+ 
+-void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut)
++void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut, bool initialized)
+ {
+     m_presetChangeNotified = m_presetLocked;
+ 
+@@ -281,7 +441,10 @@ void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hard
+         return;
+     }
+ 
+-    preset->Initialize(GetRenderContext());
++    if (!initialized)
++    {
++        preset->Initialize(GetRenderContext());
++    }
+ 
+     // If already in a transition, force immediate completion.
+     if (m_transitioningPreset != nullptr)
+diff --git a/src/libprojectM/ProjectM.hpp b/src/libprojectM/ProjectM.hpp
+index 5e79f1d..c2c4495 100644
+--- a/src/libprojectM/ProjectM.hpp
++++ b/src/libprojectM/ProjectM.hpp
+@@ -20,6 +20,8 @@
+  */
+ #pragma once
+ 
++#include "PresetLoadTimings.hpp"
++
+ #include <projectM-4/projectM_export.h>
+ 
+ #include <Renderer/RenderContext.hpp>
+@@ -76,6 +78,27 @@ public:
+      */
+     void LoadPresetFile(const std::string& presetFilename, bool smoothTransition);
+ 
++    /**
++     * @brief Loads a preset ahead of time, so switching to it later doesn't stutter (projectMSDL fork patch).
++     *
++     * The preset is read and initialized now and its shaders are compiled by the driver in the background
++     * (if the driver supports it). LoadPresetFile() with the same filename then uses it. Loading any other
++     * preset discards it. Only one preset is kept.
++     * @param presetFilename The preset filename to preload.
++     * @return True if the preset was preloaded, false if it failed to load.
++     */
++    auto PreloadPresetFile(const std::string& presetFilename) -> bool;
++
++    /**
++     * @brief Returns true if a preloaded preset exists and the driver finished compiling its shaders.
++     */
++    auto PreloadedPresetReady() -> bool;
++
++    /**
++     * @brief Discards the preloaded preset, if any.
++     */
++    void ClearPreloadedPreset();
++
+     /**
+      * @brief Loads the given preset data and performs a smooth or immediate transition.
+      *
+@@ -195,7 +218,19 @@ public:
+ private:
+     void Initialize();
+ 
+-    void StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut);
++    void StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut, bool initialized = false);
++
++    /**
++     * @brief Switches to the preloaded preset if it is the given file and its shaders linked.
++     * @return True if switched, false if the preset must be loaded normally.
++     */
++    auto SwitchToPreloadedPreset(const std::string& presetFilename, bool smoothTransition) -> bool;
++
++    /**
++     * @brief Second half of the preload: initializes the preset and starts compiling its shaders.
++     * @return True if a preloaded preset is available afterwards.
++     */
++    auto ContinuePreload() -> bool;
+ 
+     void LoadIdlePreset();
+ 
+@@ -240,6 +275,13 @@ private:
+     std::unique_ptr<Preset> m_transitioningPreset;                                //!< Destination preset when smooth preset switching.
+     std::unique_ptr<Renderer::PresetTransition> m_transition;                     //!< Transition effect used for blending.
+     std::unique_ptr<TimeKeeper> m_timeKeeper;                                     //!< Keeps the different timers used to render and switch presets.
++
++    // projectMSDL fork patch: preset preloading, see PreloadPresetFile().
++    std::unique_ptr<Preset> m_preloadedPreset;        //!< The preloaded preset, already initialized.
++    std::string m_preloadedPresetFile;                //!< The filename of the preloaded preset.
++    std::vector<unsigned int> m_preloadedPrograms;    //!< Shader programs the driver may still be compiling.
++    PresetLoadTimings m_preloadTimings;               //!< Timings of the preload.
++    bool m_preloadNeedsInitialize{false};             //!< The preloaded preset is read but not initialized yet.
+ };
+ 
+ } // namespace libprojectM
+diff --git a/src/libprojectM/ProjectMCWrapper.cpp b/src/libprojectM/ProjectMCWrapper.cpp
+index 3a34cc9..bf175dc 100644
+--- a/src/libprojectM/ProjectMCWrapper.cpp
++++ b/src/libprojectM/ProjectMCWrapper.cpp
+@@ -88,6 +88,24 @@ void projectm_load_preset_file(projectm_handle instance, const char* filename,
+     projectMInstance->LoadPresetFile(filename, smooth_transition);
+ }
+ 
++bool projectm_preload_preset_file(projectm_handle instance, const char* filename)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    return projectMInstance->PreloadPresetFile(filename);
++}
++
++bool projectm_preloaded_preset_ready(projectm_handle instance)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    return projectMInstance->PreloadedPresetReady();
++}
++
++void projectm_clear_preloaded_preset(projectm_handle instance)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    projectMInstance->ClearPreloadedPreset();
++}
++
+ void projectm_load_preset_data(projectm_handle instance, const char* data,
+                                bool smooth_transition)
+ {
+@@ -225,6 +243,9 @@ void projectm_get_last_preset_load_timings(projectm_handle /* instance */, proje
+     timings->shader_compile_ms = last.shaderCompileMs;
+     timings->initial_image_ms = last.initialImageMs;
+     timings->total_ms = last.totalMs;
++    timings->preloaded = last.preloaded;
++    timings->switch_ms = last.switchMs;
++    timings->wait_ms = last.waitMs;
+ }
+ 
+ void projectm_set_animation_speed(projectm_handle instance, float speed)
+diff --git a/src/libprojectM/Renderer/Shader.cpp b/src/libprojectM/Renderer/Shader.cpp
+index 4a64ab9..e0540fb 100644
+--- a/src/libprojectM/Renderer/Shader.cpp
++++ b/src/libprojectM/Renderer/Shader.cpp
+@@ -7,6 +7,118 @@
+ namespace libprojectM {
+ namespace Renderer {
+ 
++#ifndef GL_COMPLETION_STATUS_KHR
++#define GL_COMPLETION_STATUS_KHR 0x91B1
++#endif
++
++namespace {
++std::vector<GLuint>* deferredPrograms{nullptr}; //!< projectMSDL fork patch: see Shader::BeginDeferredChecks().
++
++// Shader objects of deferred programs. They stay attached until the driver finished linking, because
++// detaching them right after glLinkProgram() makes some drivers wait for the compile to finish.
++std::map<GLuint, std::vector<GLuint>> deferredShaders;
++
++void ReleaseShaders(GLuint program)
++{
++    auto entry = deferredShaders.find(program);
++    if (entry == deferredShaders.end())
++    {
++        return;
++    }
++    for (auto shader : entry->second)
++    {
++        if (glIsProgram(program))
++        {
++            glDetachShader(program, shader);
++        }
++        glDeleteShader(shader);
++    }
++    deferredShaders.erase(entry);
++}
++
++auto ParallelCompileSupported() -> bool
++{
++    static int supported = -1;
++    if (supported < 0)
++    {
++        supported = 0;
++        GLint extensionCount{};
++        glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
++        for (GLint index = 0; index < extensionCount; index++)
++        {
++            const auto* name = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(index)));
++            if (name != nullptr &&
++                (std::string(name) == "GL_KHR_parallel_shader_compile" || std::string(name) == "GL_ARB_parallel_shader_compile"))
++            {
++                supported = 1;
++                break;
++            }
++        }
++    }
++    return supported == 1;
++}
++} // namespace
++
++void Shader::BeginDeferredChecks(std::vector<GLuint>& programs)
++{
++    deferredPrograms = &programs;
++}
++
++void Shader::EndDeferredChecks()
++{
++    deferredPrograms = nullptr;
++}
++
++auto Shader::ProgramsReady(const std::vector<GLuint>& programs) -> bool
++{
++    if (!ParallelCompileSupported())
++    {
++        return true;
++    }
++    for (auto program : programs)
++    {
++        if (!glIsProgram(program))
++        {
++            continue;
++        }
++        GLint done{GL_TRUE};
++        glGetProgramiv(program, GL_COMPLETION_STATUS_KHR, &done);
++        if (done != GL_TRUE)
++        {
++            return false;
++        }
++        ReleaseShaders(program);
++    }
++    return true;
++}
++
++void Shader::ReleaseDeferredShaders(const std::vector<GLuint>& programs)
++{
++    for (auto program : programs)
++    {
++        ReleaseShaders(program);
++    }
++}
++
++auto Shader::ProgramsLinked(const std::vector<GLuint>& programs) -> bool
++{
++    for (auto program : programs)
++    {
++        if (!glIsProgram(program))
++        {
++            continue;
++        }
++        GLint linked{GL_FALSE};
++        glGetProgramiv(program, GL_LINK_STATUS, &linked);
++        ReleaseShaders(program);
++        if (linked != GL_TRUE)
++        {
++            return false;
++        }
++    }
++    return true;
++}
++
+ Shader::Shader()
+     : m_shaderProgram(glCreateProgram())
+ {
+@@ -31,6 +143,14 @@ void Shader::CompileProgram(const std::string& vertexShaderSource,
+ 
+     glLinkProgram(m_shaderProgram);
+ 
++    if (deferredPrograms != nullptr)
++    {
++        // Checked and released later, see BeginDeferredChecks().
++        deferredPrograms->push_back(m_shaderProgram);
++        deferredShaders[m_shaderProgram] = {vertexShader, fragmentShader};
++        return;
++    }
++
+     // Shader objects are no longer needed after linking, free the memory.
+     glDetachShader(m_shaderProgram, vertexShader);
+     glDetachShader(m_shaderProgram, fragmentShader);
+@@ -194,6 +314,12 @@ GLuint Shader::CompileShader(const std::string& source, GLenum type)
+ 
+     glCompileShader(shader);
+ 
++    if (deferredPrograms != nullptr)
++    {
++        // Checked later with the link status, see BeginDeferredChecks().
++        return shader;
++    }
++
+     glGetShaderiv(shader, GL_COMPILE_STATUS, &shaderCompiled);
+     if (shaderCompiled == GL_TRUE)
+     {
+diff --git a/src/libprojectM/Renderer/Shader.hpp b/src/libprojectM/Renderer/Shader.hpp
+index e3b0e66..3e2aa74 100644
+--- a/src/libprojectM/Renderer/Shader.hpp
++++ b/src/libprojectM/Renderer/Shader.hpp
+@@ -14,6 +14,7 @@
+ 
+ #include <map>
+ #include <string>
++#include <vector>
+ 
+ namespace libprojectM {
+ namespace Renderer {
+@@ -179,6 +180,38 @@ public:
+      */
+     static auto GetShaderLanguageVersion() -> GlslVersion;
+ 
++    /**
++     * @brief Defers the compile and link status checks of all programs compiled until EndDeferredChecks().
++     *
++     * projectMSDL fork patch for preset preloading: the status checks wait for the driver to finish
++     * compiling. Without them, drivers that support GL_KHR_parallel_shader_compile compile in the
++     * background while frames keep rendering. The program IDs are added to the given list, check them
++     * with ProgramsReady() and ProgramsLinked(). Compile errors are not thrown in this mode.
++     * @param programs Receives the IDs of the programs compiled.
++     */
++    static void BeginDeferredChecks(std::vector<GLuint>& programs);
++
++    /**
++     * @brief Ends the mode started with BeginDeferredChecks().
++     */
++    static void EndDeferredChecks();
++
++    /**
++     * @brief Returns true if the driver finished compiling and linking all given programs.
++     * Never waits. Always true if the driver doesn't support GL_KHR_parallel_shader_compile.
++     */
++    static auto ProgramsReady(const std::vector<GLuint>& programs) -> bool;
++
++    /**
++     * @brief Returns true if all given programs linked successfully. Waits for the driver if needed.
++     */
++    static auto ProgramsLinked(const std::vector<GLuint>& programs) -> bool;
++
++    /**
++     * @brief Frees the shader objects of deferred programs that are discarded before they were checked.
++     */
++    static void ReleaseDeferredShaders(const std::vector<GLuint>& programs);
++
+ private:
+     /**
+      * @brief Compiles a single shader.

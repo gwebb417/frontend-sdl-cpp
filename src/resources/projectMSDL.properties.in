@@ -105,6 +105,10 @@ projectM.transitionDuration = 3
 # circle, plasma, fade, sweep, warp, zoomblur, beatpulse, datamosh (e.g. "fade,sweep,beatpulse").
 projectM.transitionEffects = all
 
+# Loads the next preset a few seconds before the switch, so the switch doesn't stutter while the graphics
+# driver compiles the preset's shaders.
+projectM.preloadPresets = true
+
 # Slows down all preset animation evenly: 1 = normal speed, 0.5 = half speed, 0.1 = slowest.
 # Display and transition durations stay in real seconds.
 projectM.ambientSpeed = 1.0
