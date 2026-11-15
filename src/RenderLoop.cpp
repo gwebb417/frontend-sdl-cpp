@@ -426,6 +426,61 @@ RemoteControl::Result RenderLoop::ExecuteRemoteCommand(const RemoteControl::Comm
             toast(value <= OutputEffects::MinZoom ? std::string("Zoom: Off") : Poco::format("Zoom: %.1fx", value));
         }
     }
+    // Commands that set a state instead of toggling it, for custom buttons on the remote page. They also
+    // confirm when nothing had to change, so a custom button doesn't report that as a failure.
+    else if (action == "set-mode")
+    {
+        auto current = _projectMWrapper.PlaylistModeName();
+        const auto& wanted = command.value;
+        if (wanted != "all" && wanted != "favorites" && wanted != "disabled")
+        {
+            known = false;
+        }
+        else if (wanted == current)
+        {
+            toast(wanted == "all" ? "Playing all presets" : wanted == "favorites" ? "Favorites only" : "Disabled presets only");
+        }
+        else if (wanted == "favorites")
+        {
+            _projectMWrapper.ToggleFavoritesOnly();
+        }
+        else if (wanted == "disabled")
+        {
+            _projectMWrapper.ToggleDisabledOnly();
+        }
+        else if (current == "favorites")
+        {
+            _projectMWrapper.ToggleFavoritesOnly();
+        }
+        else
+        {
+            _projectMWrapper.ToggleDisabledOnly();
+        }
+    }
+    else if (action == "set-lock")
+    {
+        bool wanted = command.value == "1" || command.value == "true";
+        if (wanted != _projectMWrapper.PresetLocked())
+        {
+            notificationCenter.postNotification(new Notification::PlaybackControl(Action::TogglePresetLocked));
+        }
+        else
+        {
+            toast(wanted ? "Preset locked" : "Preset unlocked");
+        }
+    }
+    else if (action == "set-shuffle")
+    {
+        bool wanted = command.value == "1" || command.value == "true";
+        if (wanted != ProjectMSDLApplication::instance().config().getBool("projectM.shuffleEnabled", true))
+        {
+            notificationCenter.postNotification(new Notification::PlaybackControl(Action::ToggleShuffle));
+        }
+        else
+        {
+            toast(wanted ? "Shuffle: On" : "Shuffle: Off");
+        }
+    }
     else if (action == "display-duration")
     {
         double value{};
