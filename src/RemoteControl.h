@@ -28,6 +28,9 @@ class HTTPServer;
  *   GET  /api/status            Status as JSON (current preset, modes, settings).
  *   POST /api/<action>?value=x&smooth=1
  *        Runs an action. Requires the header "X-ProjectM: 1", which web pages from other sites can't send.
+ *        Waits until the main thread ran it and answers {"ok":true,"message":"..."} (the toast text), or
+ *        {"ok":false,"error":"..."}.
+ *   GET/POST /api/layout        The page layout (Edit layout mode), shared by all devices.
  */
 class RemoteControl
 {
@@ -41,6 +44,14 @@ public:
         bool smooth{false}; //!< For preset switches: smooth transition instead of a hard cut.
     };
 
+    /**
+     * @brief What a command did, sent back to the page so it can confirm the button press.
+     */
+    struct Result {
+        bool ok{true};       //!< False if the command couldn't be done.
+        std::string message; //!< Shown on the page, normally the same text as the toast on the screen.
+    };
+
     RemoteControl();
     ~RemoteControl();
 
@@ -51,9 +62,9 @@ public:
      * @brief Starts/stops the server according to the settings, runs queued commands and refreshes the status.
      * Called once per frame on the main thread.
      * @param buildStatus Returns the current status as a JSON object string.
-     * @param execute Runs one command.
+     * @param execute Runs one command and returns what it did.
      */
-    void Update(const std::function<std::string()>& buildStatus, const std::function<void(const Command&)>& execute);
+    void Update(const std::function<std::string()>& buildStatus, const std::function<Result(const Command&)>& execute);
 
     /**
      * @brief Stops the server.

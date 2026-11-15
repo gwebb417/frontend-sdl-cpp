@@ -7,10 +7,14 @@
 #include "SDLRenderingWindow.h"
 #include "SpoutOutput.h"
 
+#include "notifications/DisplayToast.h"
 #include "notifications/Quit.h"
 
 #include <Poco/Logger.h>
 #include <Poco/NObserver.h>
+
+#include <string>
+#include <vector>
 
 class FPSLimiter;
 class ProjectMGUI;
@@ -70,7 +74,12 @@ protected:
     /**
      * @brief Runs a command from the remote control (main thread).
      */
-    void ExecuteRemoteCommand(const RemoteControl::Command& command);
+    RemoteControl::Result ExecuteRemoteCommand(const RemoteControl::Command& command);
+
+    /**
+     * @brief Records toasts posted while a remote command runs, see ExecuteRemoteCommand().
+     */
+    void RecordRemoteToast(const Poco::AutoPtr<Notification::DisplayToast>& notification);
 
     /**
      * @brief Returns the status shown on the remote control page, as a JSON object.
@@ -155,6 +164,7 @@ protected:
     OutputPipeline _outputPipeline; //!< Offscreen rendering for mirror/zoom and Spout output.
     SpoutOutput _spoutOutput;       //!< Spout2 sender (Windows).
     RemoteControl _remoteControl;   //!< HTTP remote control with a phone page.
+    std::vector<std::string>* _recordedToasts{nullptr}; //!< Receives toasts while a remote command runs.
 
     ModifierKeyStates _keyStates; //!< Current "pressed" states of modifier keys
 

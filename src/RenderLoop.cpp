@@ -62,7 +62,7 @@ void RenderLoop::Run()
 
         PollEvents();
         _remoteControl.Update([this] { return RemoteStatusJson(); },
-                              [this](const RemoteControl::Command& command) { ExecuteRemoteCommand(command); });
+                              [this](const RemoteControl::Command& command) { return ExecuteRemoteCommand(command); });
         // Apply window size/position/monitor/fullscreen changes from the settings window once per frame.
         _sdlRenderingWindow.ApplyPendingConfigChanges();
         _audioCapture.FillBuffer();
@@ -278,7 +278,7 @@ void RenderLoop::ChangeZoom(float value)
         new Notification::DisplayToast(zoom <= OutputEffects::MinZoom ? std::string("Zoom: Off") : Poco::format("Zoom: %.1hfx", zoom)));
 }
 
-void RenderLoop::ExecuteRemoteCommand(const RemoteControl::Command& command)
+RemoteControl::Result RenderLoop::ExecuteRemoteCommand(const RemoteControl::Command& command)
 {
     using Action = Notification::PlaybackControl::Action;
     auto& notificationCenter = Poco::NotificationCenter::defaultCenter();
@@ -288,6 +288,25 @@ void RenderLoop::ExecuteRemoteCommand(const RemoteControl::Command& command)
     auto toast = [&notificationCenter](const std::string& message) {
         notificationCenter.postNotification(new Notification::DisplayToast(message));
     };
+
+    // The page shows the same text as the toast on the screen, so record the toasts the command posts.
+    // Notifications are delivered right away on this thread.
+    std::vector<std::string> toasts;
+    Poco::NObserver<RenderLoop, Notification::DisplayToast> toastRecorder(*this, &RenderLoop::RecordRemoteToast);
+    _recordedToasts = &toasts;
+    notificationCenter.addObserver(toastRecorder);
+    struct StopRecording {
+        Poco::NotificationCenter& center;
+        Poco::NObserver<RenderLoop, Notification::DisplayToast>& observer;
+        std::vector<std::string>*& target;
+        ~StopRecording()
+        {
+            center.removeObserver(observer);
+            target = nullptr;
+        }
+    } stopRecording{notificationCenter, toastRecorder, _recordedToasts};
+
+    bool known{true};
     auto number = [&command](double& value) {
         return Poco::NumberParser::tryParseFloat(command.value, value) && std::isfinite(value);
     };
@@ -407,9 +426,112 @@ void RenderLoop::ExecuteRemoteCommand(const RemoteControl::Command& command)
             toast(value <= OutputEffects::MinZoom ? std::string("Zoom: Off") : Poco::format("Zoom: %.1fx", value));
         }
     }
+    else if (action == "display-duration")
+    {
+        double value{};
+        if (number(value))
+        {
+            value = std::clamp(std::round(value), 1.0, 240.0);
+            userConfig->setDouble("projectM.displayDuration", value);
+            toast(Poco::format("Preset Display Duration: %.0f s", value));
+        }
+    }
+    else if (action == "transition-duration")
+    {
+        double value{};
+        if (number(value))
+        {
+            value = std::clamp(std::round(value * 10.0) / 10.0, 0.0, 10.0);
+            userConfig->setDouble("projectM.transitionDuration", value);
+            toast(Poco::format("Transition Duration: %.1f s", value));
+        }
+    }
+    else if (action == "transition-effect")
+    {
+        // Value "key:1" turns an effect on, "key:0" off, e.g. "beatpulse:0".
+        auto separator = command.value.find(':');
+        if (separator != std::string::npos)
+        {
+            std::string key = command.value.substr(0, separator);
+            bool enabled = command.value.substr(separator + 1) == "1";
+            for (const auto& effect : ProjectMWrapper::TransitionEffectNames())
+            {
+                if (effect.first != key)
+                {
+                    continue;
+                }
+                auto current = userConfig->getString("projectM.transitionEffects", "all");
+                auto updated = ProjectMWrapper::TransitionEffectsWith(current, key, enabled);
+                if (updated != current)
+                {
+                    userConfig->setString("projectM.transitionEffects", updated);
+                    toast("Transition " + effect.second + (enabled ? ": On" : ": Off"));
+                }
+            }
+        }
+    }
+    else if (action == "hard-cuts")
+    {
+        bool on = command.value == "1" || command.value == "true";
+        userConfig->setBool("projectM.hardCutsEnabled", on);
+        toast(on ? "Hard Cuts: On" : "Hard Cuts: Off");
+    }
+    else if (action == "hard-cut-duration")
+    {
+        double value{};
+        if (number(value))
+        {
+            value = std::clamp(std::round(value), 1.0, 240.0);
+            userConfig->setDouble("projectM.hardCutDuration", value);
+            toast(Poco::format("Earliest Hard Cut After: %.0f s", value));
+        }
+    }
+    else if (action == "hard-cut-threshold")
+    {
+        double value{};
+        if (number(value))
+        {
+            value = std::clamp(std::round(value * 10.0) / 10.0, 0.0, 10.0);
+            userConfig->setDouble("projectM.hardCutSensitivity", value);
+            toast(Poco::format("Hard Cut Threshold: %.1f", value));
+        }
+    }
     else
     {
         poco_debug_f1(_logger, "Unknown remote control command: %s", action);
+        known = false;
+    }
+
+    if (!known)
+    {
+        return {false, "Unknown command: " + action};
+    }
+    // Preset switches have no toast: confirm with the preset that is shown now.
+    if (action == "next" || action == "previous" || action == "random" || action == "back")
+    {
+        return {true, _projectMWrapper.CurrentPresetName()};
+    }
+    if (toasts.empty())
+    {
+        return {false, "Not changed"};
+    }
+    // Toasts that explain why something wasn't done are reported as failures.
+    const auto& message = toasts.back();
+    for (const char* refusal : {"works while", "must stay on", "is off while", "Could not", "Not in favorites", "No favorites", "No disabled presets", "Nothing to undo"})
+    {
+        if (message.find(refusal) != std::string::npos)
+        {
+            return {false, message};
+        }
+    }
+    return {true, message};
+}
+
+void RenderLoop::RecordRemoteToast(const Poco::AutoPtr<Notification::DisplayToast>& notification)
+{
+    if (_recordedToasts != nullptr)
+    {
+        _recordedToasts->push_back(notification->ToastText());
     }
 }
 
@@ -430,6 +552,22 @@ std::string RenderLoop::RemoteStatusJson() const
     status.set("ambientSpeed", rounded(_projectMWrapper.AmbientSpeed()));
     status.set("mirror", OutputEffects::MirrorModeNames()[static_cast<size_t>(effects.mirror)].first);
     status.set("zoom", rounded(effects.zoom));
+
+    status.set("displayDuration", rounded(static_cast<float>(config.getDouble("projectM.displayDuration", 30.0))));
+    status.set("transitionDuration", rounded(static_cast<float>(config.getDouble("projectM.transitionDuration", 3.0))));
+    Poco::JSON::Array transitionEffects;
+    for (const auto& effect : ProjectMWrapper::TransitionEffectNames())
+    {
+        Poco::JSON::Object entry;
+        entry.set("key", effect.first);
+        entry.set("name", effect.second);
+        entry.set("on", _projectMWrapper.TransitionEffectEnabled(effect.first));
+        transitionEffects.add(entry);
+    }
+    status.set("transitionEffects", transitionEffects);
+    status.set("hardCuts", config.getBool("projectM.hardCutsEnabled", false));
+    status.set("hardCutDuration", rounded(static_cast<float>(config.getDouble("projectM.hardCutDuration", 20.0))));
+    status.set("hardCutThreshold", rounded(static_cast<float>(config.getDouble("projectM.hardCutSensitivity", 1.0))));
 
     std::ostringstream json;
     status.stringify(json);

@@ -1,6 +1,13 @@
 #include "RemoteControl.h"
 
+#include "ProjectMSDLApplication.h"
+
 #include "notifications/DisplayToast.h"
+
+#include <Poco/File.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/Path.h>
 
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -22,22 +29,41 @@
 #include <SDL2/SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <deque>
+#include <fstream>
+#include <future>
+#include <iterator>
 #include <mutex>
+#include <sstream>
 
 const char* RemoteControlPage(); // RemoteControlPage.cpp
 
 struct RemoteControl::Shared {
     std::mutex mutex;
-    std::deque<Command> queue;
+    /**
+     * @brief A queued command and where its result goes. The request handler waits for the result.
+     * If the entry is dropped without a result (server stopped), the handler gets an error instead of waiting.
+     */
+    struct Pending {
+        Command command;
+        std::shared_ptr<std::promise<RemoteControl::Result>> result;
+    };
+    std::deque<Pending> queue;
     std::string statusJson{"{}"};
     bool requireAuthentication{false};
     std::string password;
+
+    // The page layout (Edit layout mode), saved by the page and shared by all devices.
+    std::mutex layoutMutex;
+    std::string layoutPath;      //!< remote-layout.json in the user data folder.
+    uint64_t layoutRevision{0};  //!< Changes on every save, so open pages reload the layout.
 };
 
 namespace {
 
 constexpr size_t MaxQueuedCommands{64};
+constexpr std::streamsize MaxLayoutBytes{64 * 1024};
 
 /**
  * @brief Compares without stopping at the first difference, so response times don't reveal the password.
@@ -153,7 +179,23 @@ public:
                 std::lock_guard<std::mutex> lock(_shared->mutex);
                 status = _shared->statusJson;
             }
+            uint64_t revision;
+            {
+                std::lock_guard<std::mutex> lock(_shared->layoutMutex);
+                revision = _shared->layoutRevision;
+            }
+            // Added here, the status itself is built on the main thread.
+            if (status.size() > 2 && status.back() == '}')
+            {
+                status.insert(status.size() - 1, ",\"layoutRevision\":" + std::to_string(revision));
+            }
             SendText(response, Status::HTTP_OK, "application/json", status);
+            return;
+        }
+
+        if (path == "/api/layout")
+        {
+            HandleLayout(request, response);
             return;
         }
 
@@ -182,16 +224,42 @@ public:
                 }
             }
 
+            auto promise = std::make_shared<std::promise<RemoteControl::Result>>();
+            auto future = promise->get_future();
             {
                 std::lock_guard<std::mutex> lock(_shared->mutex);
                 if (_shared->queue.size() >= MaxQueuedCommands)
                 {
-                    SendText(response, Status::HTTP_SERVICE_UNAVAILABLE, "application/json", R"({"ok":false,"error":"busy"})");
+                    SendText(response, Status::HTTP_SERVICE_UNAVAILABLE, "application/json", R"({"ok":false,"error":"Busy, try again"})");
                     return;
                 }
-                _shared->queue.push_back(std::move(command));
+                _shared->queue.push_back({std::move(command), std::move(promise)});
             }
-            SendText(response, Status::HTTP_OK, "application/json", R"({"ok":true})");
+
+            // The main thread runs it within one frame, unless it's busy (e.g. loading a preset).
+            Poco::JSON::Object answer;
+            if (future.wait_for(std::chrono::seconds(3)) != std::future_status::ready)
+            {
+                answer.set("ok", false);
+                answer.set("error", "projectM didn't answer in time");
+            }
+            else
+            {
+                try
+                {
+                    auto result = future.get();
+                    answer.set("ok", result.ok);
+                    answer.set(result.ok ? "message" : "error", result.message);
+                }
+                catch (const std::exception&)
+                {
+                    answer.set("ok", false);
+                    answer.set("error", "Remote control stopped");
+                }
+            }
+            std::ostringstream json;
+            answer.stringify(json);
+            SendText(response, Status::HTTP_OK, "application/json", json.str());
             return;
         }
 
@@ -199,6 +267,120 @@ public:
     }
 
 private:
+    /**
+     * @brief GET returns the saved page layout ("{}" if none), POST saves it ("{}" resets to the default).
+     * Handled here on the server thread: only a file is read or written, projectM isn't touched.
+     */
+    void HandleLayout(Poco::Net::HTTPServerRequest& request, Poco::Net::HTTPServerResponse& response)
+    {
+        using Status = Poco::Net::HTTPResponse::HTTPStatus;
+        const auto& method = request.getMethod();
+
+        if (method == Poco::Net::HTTPRequest::HTTP_GET)
+        {
+            std::string layout{"{}"};
+            {
+                std::lock_guard<std::mutex> lock(_shared->layoutMutex);
+                std::ifstream file(_shared->layoutPath, std::ios::binary);
+                if (file)
+                {
+                    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    if (!content.empty())
+                    {
+                        layout = content;
+                    }
+                }
+            }
+            SendText(response, Status::HTTP_OK, "application/json", layout);
+            return;
+        }
+
+        if (method != Poco::Net::HTTPRequest::HTTP_POST)
+        {
+            SendText(response, Status::HTTP_METHOD_NOT_ALLOWED, "text/plain", "Method not allowed");
+            return;
+        }
+        if (request.get("X-ProjectM", "") != "1")
+        {
+            SendText(response, Status::HTTP_FORBIDDEN, "text/plain", "Missing X-ProjectM header");
+            return;
+        }
+
+        // Read at most MaxLayoutBytes + 1, so a too large body is detected without reading it all.
+        std::string body(static_cast<size_t>(MaxLayoutBytes + 1), '\0');
+        request.stream().read(&body[0], MaxLayoutBytes + 1);
+        body.resize(static_cast<size_t>(request.stream().gcount()));
+        if (static_cast<std::streamsize>(body.size()) > MaxLayoutBytes)
+        {
+            SendText(response, Status::HTTP_REQUEST_ENTITY_TOO_LARGE, "application/json", R"({"ok":false,"error":"too large"})");
+            return;
+        }
+
+        bool reset{false};
+        try
+        {
+            Poco::JSON::Parser parser;
+            auto parsed = parser.parse(body);
+            auto object = parsed.extract<Poco::JSON::Object::Ptr>();
+            if (!object)
+            {
+                throw Poco::Exception("not an object");
+            }
+            reset = object->size() == 0;
+        }
+        catch (const std::exception&)
+        {
+            SendText(response, Status::HTTP_BAD_REQUEST, "application/json", R"({"ok":false,"error":"invalid layout"})");
+            return;
+        }
+
+        bool saved{false};
+        {
+            std::lock_guard<std::mutex> lock(_shared->layoutMutex);
+            try
+            {
+                if (reset)
+                {
+                    Poco::File file(_shared->layoutPath);
+                    if (file.exists())
+                    {
+                        file.remove();
+                    }
+                    saved = true;
+                }
+                else
+                {
+                    // Written to a temporary file first, so a crash never leaves half a layout.
+                    std::string temporaryPath = _shared->layoutPath + ".tmp";
+                    {
+                        std::ofstream file(temporaryPath, std::ios::binary | std::ios::trunc);
+                        file << body;
+                        saved = static_cast<bool>(file);
+                    }
+                    if (saved)
+                    {
+                        Poco::File(temporaryPath).renameTo(_shared->layoutPath);
+                    }
+                }
+            }
+            catch (const Poco::Exception&)
+            {
+                saved = false;
+            }
+            if (saved)
+            {
+                _shared->layoutRevision++;
+            }
+        }
+
+        if (!saved)
+        {
+            SendText(response, Status::HTTP_INTERNAL_SERVER_ERROR, "application/json", R"({"ok":false,"error":"could not save"})");
+            return;
+        }
+        SendText(response, Status::HTTP_OK, "application/json", R"({"ok":true})");
+    }
+
     bool Authenticated(const Poco::Net::HTTPServerRequest& request) const
     {
         std::string password;
@@ -336,6 +518,12 @@ void RemoteControl::Start(const Settings& settings)
             _shared->password = settings.password;
             _shared->queue.clear();
         }
+        {
+            std::lock_guard<std::mutex> lock(_shared->layoutMutex);
+            _shared->layoutPath = Poco::Path(ProjectMSDLApplication::instance().UserDataDir()).setFileName("remote-layout.json").toString();
+            // Different after every start, so pages that stayed open load the layout again.
+            _shared->layoutRevision = SDL_GetTicks64() * 1000;
+        }
 
         auto* params = new Poco::Net::HTTPServerParams;
         params->setMaxThreads(4);
@@ -361,6 +549,11 @@ void RemoteControl::Start(const Settings& settings)
 
 void RemoteControl::Stop()
 {
+    // Dropping the queued commands wakes the request handlers waiting for their results.
+    {
+        std::lock_guard<std::mutex> lock(_shared->mutex);
+        _shared->queue.clear();
+    }
     if (_server)
     {
         _server->stopAll(true);
@@ -369,7 +562,7 @@ void RemoteControl::Stop()
     }
 }
 
-void RemoteControl::Update(const std::function<std::string()>& buildStatus, const std::function<void(const Command&)>& execute)
+void RemoteControl::Update(const std::function<std::string()>& buildStatus, const std::function<Result(const Command&)>& execute)
 {
     auto settings = ReadSettings();
     if (_firstUpdate || !(settings == _applied))
@@ -393,15 +586,24 @@ void RemoteControl::Update(const std::function<std::string()>& buildStatus, cons
         return;
     }
 
-    std::deque<Command> commands;
+    std::deque<Shared::Pending> commands;
     {
         std::lock_guard<std::mutex> lock(_shared->mutex);
         commands.swap(_shared->queue);
     }
 
-    for (const auto& command : commands)
+    for (auto& pending : commands)
     {
-        execute(command);
+        Result result;
+        try
+        {
+            result = execute(pending.command);
+        }
+        catch (const std::exception& ex)
+        {
+            result = {false, ex.what()};
+        }
+        pending.result->set_value(result);
     }
 
     // The status is read by the page about once per second, so refreshing it 4 times per second is plenty.
