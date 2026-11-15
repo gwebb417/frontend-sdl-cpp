@@ -5,7 +5,7 @@ This is an unofficial fork, not an official projectM release.
 
 ## Download
 
-The current version is **v1.4** ([release page](https://github.com/gwebb417/frontend-sdl-cpp/releases/tag/fork-v1.4)).
+The current version is **v1.5** ([release page](https://github.com/gwebb417/frontend-sdl-cpp/releases/tag/fork-v1.5)).
 Both downloads are on the [latest release](https://github.com/gwebb417/frontend-sdl-cpp/releases/latest) page. They
 already include the presets and textures (see [Presets and textures](#presets-and-textures)) and run in
 [portable mode](#new-features), so settings and favorites are kept in the unpacked folder.
@@ -23,17 +23,18 @@ they're missing.
 into the new one (or just replace `projectMSDL.exe` / `projectMSDL` in your old folder). Settings, favorites and
 disabled presets carry over.
 
-## What's new in v1.4
+## What's new in v1.5
 
-- **Remote control from your phone:** a web page with all the main controls, served by projectM itself (see
-  [Remote control](#remote-control)).
-- **Spout output for OBS** (Windows): OBS keeps getting the picture while projectM is minimized, without menus or
-  toasts (see [Spout output](#spout-output-obs)).
-- **Mirror and zoom effects:** M cycles left-to-right, top-to-bottom and 4-way mirroring, +/- zoom in and out.
-- **Ambient Speed:** slows all preset animation evenly (LEFT/RIGHT keys).
-- **Same Speed at Any FPS:** presets no longer move faster at higher FPS limits.
-- **Bass, Mid and Treble Sensitivity**, and **frequency bands** that match real bass, mids and treble.
-- Fixes: Ctrl+S opens the settings, correct colors in OBS Game Capture.
+- **No more stutter on preset switches:** the next preset is loaded a few seconds early, and the graphics driver
+  compiles its shaders in the background (see [Preset preloading](#new-features)).
+- **Choose the transition effects**, including two new ones, **Beat Pulse** and **Datamosh** (Settings > projectM or
+  Options > Transition Effects).
+- **Remote control:** transitions and hard cuts, a Back button, a check mark or error on every button press, and a
+  page you can rearrange and customize: button size, light theme, accent color, button names and your own buttons
+  that run several steps (see [Remote control](#remote-control)).
+- **libprojectM 4.1.8** with its fixes, e.g. a freeze with some preset shaders.
+- Fixes: broken texture files were read again on every frame; transition effects could flash again at the end of a
+  transition.
 
 All features of this fork are listed below.
 
@@ -74,6 +75,16 @@ All features of this fork are listed below.
 - **Frequency bands** (Settings > Audio): Milkdrop and the official projectM split only 0-11025 Hz into three equal
   parts, so "bass" was 0-3675 Hz. The default **Music** bands are bass 20-250 Hz, mid 250-4000 Hz and treble
   4000-20000 Hz. **Milkdrop Standard** brings back the original split, and **Custom** lets you set the ranges in Hz.
+- **Transition effects** (Settings > projectM, Options > Transition Effects): choose which effects smooth
+  transitions use. Each transition picks one of the checked effects at random. Besides the built-in Circle, Plasma,
+  Fade, Sweep, Warp and Zoom Blur, there are two new ones: **Beat Pulse** dissolves the old preset in bubbles that
+  pulse with the bass, **Datamosh** drags the old picture along a moving path like a video glitch. Both are from
+  [C06alt1/projectm_ext](https://github.com/C06alt1/projectm_ext) (LGPL 2.1, like libprojectM).
+- **Preset preloading** (Settings > projectM > Preload Next Preset, on by default): switching to a preset the graphics
+  driver hasn't compiled before froze the picture for 0.1 to over 1 second. The next preset is now loaded a few
+  seconds after each transition, and drivers that support it (e.g. NVIDIA) compile its shaders in the background, so
+  the switch itself takes about 1 ms. This works for automatic switches, hard cuts, N, R and the remote's Next and
+  Random. Presets picked by hand (search, P, BACKSPACE) load as before.
 - **Linux records what's playing:** if no audio device is set, the "Monitor of ..." device of the current output is
   used instead of the microphone, so projectM visualizes the music the PC plays. Pick another device in the settings
   or with Ctrl+I.
@@ -123,6 +134,10 @@ All features of this fork are listed below.
 - Preset paths no longer contain a double slash (e.g. in the path copied with Ctrl+C).
 - OBS Game Capture (and similar capture tools) showed the image before the preset's final shader, so colors were wrong.
 - Ctrl+S didn't open the settings, although the File menu lists it.
+- A texture file that couldn't be loaded (e.g. a broken image a preset refers to) was read and decoded again on every
+  frame, for as long as the preset played.
+- Transition effects could briefly show up again at the very end of a transition, when the last frame came late (the
+  transition went past 100% and the effect curves turned back).
 
 ## Keybinds
 
@@ -193,10 +208,19 @@ type must appear in the preset name (not case sensitive).
 
 ## Remote control
 
-Control projectM from your phone (or any web browser): next, previous and random preset (with an optional smooth
-transition), lock, shuffle, mirror, zoom, Ambient Speed, Beat Averaging and Beat Sensitivity, save and remove
-favorites, disable and re-enable presets, undo, and the favorites-only and disabled-only modes. The page also shows the
-current preset.
+Control projectM from your phone (or any web browser):
+
+- **Presets:** previous, back (last played, like BACKSPACE), random and next, with an optional smooth transition;
+  lock and shuffle.
+- **Transitions:** preset display duration, transition duration, the transition effects, hard cuts on/off, the
+  earliest hard cut and the hard cut threshold.
+- **Effects:** mirror, zoom and Ambient Speed. **Music reaction:** Beat Averaging and Beat Sensitivity.
+- **Favorites and disabled presets:** save and remove favorites, disable and re-enable presets, undo, and the
+  favorites-only and disabled-only modes.
+
+The page shows the current preset. Every button press is confirmed: the button turns green with a check mark when
+projectM did it, or red if it couldn't (with the reason). The same text as the message on the screen is shown under the
+preset name, and phones that support it vibrate briefly.
 
 1. In **Settings > Remote / Spout** (on Linux: **Remote Control**), turn on **Enable Remote Control**.
 2. To use it from your phone, also turn on **Allow Other Devices** and set a **Password** (press Enter to apply).
@@ -207,6 +231,25 @@ current preset.
 Without **Allow Other Devices**, the page only opens on the PC itself (`http://127.0.0.1:8765`). The connection is not
 encrypted, so only allow other devices in your home network. Web pages from other sites can't send commands to it.
 Tip: add the page to your phone's home screen.
+
+Settings changed with the remote apply right away and stay until projectM is closed, like changes in the menus. To
+keep them, click **Save Settings** in the settings window.
+
+### Customizing the remote page
+
+Tap **Edit layout** on the page. Then you can:
+
+- **Move and hide sections** with the buttons on each section.
+- **Move, hide and rename buttons:** tap a button to select it (orange outline), then use the buttons below its group.
+  Each group also has a **Buttons per row** setting.
+- **Appearance:** button size (compact, normal, large), sliders or -/+ buttons, dark or light theme and the accent
+  color.
+- **My buttons:** **+ New button** creates your own button that runs several steps in order, e.g. "Calm" = Ambient
+  Speed 0.4, no mirror, play favorites only. Select it to rename it and to add, reorder or remove steps. If a step
+  fails, the button says which one.
+
+Tap **Done** when finished. The layout is saved in projectM (`remote-layout.json` in the `userdata` folder), so every
+phone and tablet gets the same page. **Reset to default** brings back the original layout.
 
 ## Spout output (OBS)
 
@@ -228,14 +271,20 @@ runtime) linked in statically, so no DLLs are needed. Requires Visual Studio (20
 other versions) and [vcpkg](https://github.com/microsoft/vcpkg) (here in `C:\vcpkg`). vcpkg builds all dependencies
 from `vcpkg.json` automatically during the first configure, which can take a while.
 
-libprojectM is built from the overlay port in `vcpkg-overlay/ports/projectm` (set in `vcpkg-configuration.json`): the
-official vcpkg port plus these patches, which the Linux workflow applies too:
+libprojectM 4.1.8 is built from the overlay port in `vcpkg-overlay/ports/projectm` (set in
+`vcpkg-configuration.json`): the official vcpkg port plus these patches, which the Linux workflow applies too:
 
 - `beat-sensitivity.patch`: makes the Beat Sensitivity setting work.
 - `animation-speed.patch`: Ambient Speed and Same Speed at Any FPS.
 - `band-sensitivity.patch`: Bass/Mid/Treble Sensitivity and the frequency bands.
 - `render-fbo.patch`: lets projectM render into an offscreen image (for Spout and the effects), a backport of
   `projectm_opengl_render_frame_fbo()` from libprojectM 4.2.
+- `failed-texture-retry.patch`: a texture file that failed to load isn't read again on every frame (from
+  [iceyaye/projectm](https://github.com/iceyaye/projectm)).
+- `transition-effects.patch`: choose the transition effects, the Beat Pulse and Datamosh effects (from
+  [C06alt1/projectm_ext](https://github.com/C06alt1/projectm_ext)), and transitions that never go past 100%.
+- `load-timings.patch`: how long each part of a preset load took, written to the log.
+- `preset-preload.patch`: preset preloading with background shader compilation.
 
 Spout output uses [Spout2](https://github.com/leadedge/Spout2) (BSD 2-Clause license) from vcpkg.
 
