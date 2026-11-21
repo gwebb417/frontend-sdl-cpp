@@ -98,7 +98,7 @@ html.pm .pm-row { display: flex; }
 #connection.bad { color: var(--bad); }
 .slider-block + .slider-block { margin-top: 6px; }
 /* Edit layout mode. */
-.layout-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.layout-bar { display: flex; gap: 8px; margin-bottom: 8px; }
 .layout-bar button { flex: 1; min-height: calc(var(--h) * .8); font-size: calc(var(--fs) * .9); }
 .layout-bar #layout-reset { display: none; }
 .edit-only, .tools { display: none; }
@@ -146,31 +146,6 @@ html:not(.light) input[type=text], html:not(.light) input[type=number], html:not
       <span class="badge" id="badge-shuffle">Shuffle</span>
     </div>
     <div id="last" aria-live="polite"></div>
-  </section>
-
-  <div class="layout-bar">
-    <button id="layout-edit">Edit layout</button>
-    <button id="layout-reset">Reset to default</button>
-  </div>
-  <p class="hint edit-only">Move or hide sections with the buttons on each one. Tap a button to select it (orange
-    outline), then move, hide or rename it below its group. Changes are saved for every device.</p>
-
-  <section class="edit-only appearance">
-    <div class="head"><h2>Appearance (all devices)</h2></div>
-    <div class="caption">Button size</div>
-    <div class="seg" data-appearance="size">
-      <button data-value="compact">Compact</button><button data-value="normal">Normal</button><button data-value="large">Large</button>
-    </div>
-    <div class="caption">Sliders</div>
-    <div class="seg" data-appearance="sliders">
-      <button data-value="slider">Slider</button><button data-value="buttons">&minus; / + buttons</button>
-    </div>
-    <div class="caption">Theme</div>
-    <div class="seg" data-appearance="theme">
-      <button data-value="dark">Dark</button><button data-value="light">Light</button>
-    </div>
-    <div class="caption">Accent color</div>
-    <div class="swatches" id="swatches"></div>
   </section>
 
   <div id="sections">
@@ -280,6 +255,32 @@ html:not(.light) input[type=text], html:not(.light) input[type=number], html:not
       </div>
     </div>
   </section>
+  </div>
+
+  <p class="hint edit-only">Move or hide sections with the buttons on each one. Tap a button to select it (orange
+    outline), then move, hide or rename it below its group. Changes are saved for every device.</p>
+
+  <section class="edit-only appearance">
+    <div class="head"><h2>Appearance (all devices)</h2></div>
+    <div class="caption">Button size</div>
+    <div class="seg" data-appearance="size">
+      <button data-value="compact">Compact</button><button data-value="normal">Normal</button><button data-value="large">Large</button>
+    </div>
+    <div class="caption">Sliders</div>
+    <div class="seg" data-appearance="sliders">
+      <button data-value="slider">Slider</button><button data-value="buttons">&minus; / + buttons</button>
+    </div>
+    <div class="caption">Theme</div>
+    <div class="seg" data-appearance="theme">
+      <button data-value="dark">Dark</button><button data-value="light">Light</button>
+    </div>
+    <div class="caption">Accent color</div>
+    <div class="swatches" id="swatches"></div>
+  </section>
+
+  <div class="layout-bar">
+    <button id="layout-edit">Edit layout</button>
+    <button id="layout-reset">Reset to default</button>
   </div>
 
   <div id="connection">Connecting&hellip;</div>
